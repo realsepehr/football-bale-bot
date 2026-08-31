@@ -30,7 +30,7 @@ BALE_API_BASE_URL = "https://tapi.bale.ai/bot"
 
 # آیدی عددی کاربر بله‌ت که قراره ادمین باشه (بدون این عدد، دستورات ادمین کار نمی‌کنن)
 # اگه نمی‌دونی آیدیت چیه: ربات رو /start بزن، بعد موقتاً پایین همین فایل توضیح دادم چطور پیداش کنی
-ADMIN_IDS = [1845840976,12627252]   # <-- آیدی عددی خودت رو اینجا بذار (می‌تونی چند نفر هم بذاری)
+ADMIN_IDS = [1845840976, 136295297]   # <-- آیدی عددی خودت رو اینجا بذار (می‌تونی چند نفر هم بذاری)
 
 # آیدی عددی کانالی که نتایج بازی‌ها توش پست بشه (باید ربات ادمین اون کانال باشه)
 # اگه نمی‌خوای، همینو خالی (None) بذار؛ نتایج فقط توی خود پنل ادمین نشون داده می‌شه
@@ -39,10 +39,6 @@ CHANNEL_ID = "@FootballXchannel"   # <-- کانال نتایج بازی‌ها
 INITIAL_BUDGET = 130      # بودجه اولیه هر کاربر
 MIN_TEAM_SIZE = 11
 MAX_TEAM_SIZE = 22
-
-# حداکثر تعداد تیم‌هایی که توی یه «روز بازی» شرکت می‌کنن (لیگ)؛ اگه تیم‌های آماده بیشتر باشن،
-# فقط ۲۰ تیم برتر (بر اساس امتیاز فعلی لیگ) بازی می‌کنن تا تعداد بازی‌ها خیلی زیاد نشه
-MAX_MATCHDAY_TEAMS = 20
 DATABASE_PATH = "fantasy.db"
 
 # هزینه ارتقای هر بازیکن = قدرت فعلیش ضربدر این عدد (هر بار که ارتقا بگیره قدرتش +۱ می‌شه)
@@ -56,6 +52,43 @@ DRAW_POINTS = 1
 SPONSOR_MATCH_BONUS = 5
 # حداکثر نوسان شانسی نسبت به قدرت پایه تیم (۰.۳ یعنی تا ۳۰٪ نوسان تصادفی)
 BATTLE_RANDOM_FACTOR = 0.3
+
+# آرایش‌های قابل انتخاب: تعداد مدافع/هافبک/مهاجم (دروازه‌بان همیشه ۱ نفره و جدا حساب می‌شه)
+FORMATIONS = {
+    "4-4-2": {"DF": 4, "MF": 4, "FW": 2},
+    "4-3-3": {"DF": 4, "MF": 3, "FW": 3},
+    "4-2-3-1": {"DF": 4, "MF": 5, "FW": 1},
+    "4-1-2-1-2": {"DF": 4, "MF": 4, "FW": 2},
+    "4-3-2-1": {"DF": 4, "MF": 5, "FW": 1},
+    "4-1-4-1": {"DF": 4, "MF": 5, "FW": 1},
+    "4-2-2-2": {"DF": 4, "MF": 4, "FW": 2},
+    "4-5-1": {"DF": 4, "MF": 5, "FW": 1},
+    "3-5-2": {"DF": 3, "MF": 5, "FW": 2},
+    "3-4-3": {"DF": 3, "MF": 4, "FW": 3},
+    "3-4-1-2": {"DF": 3, "MF": 5, "FW": 2},
+    "5-3-2": {"DF": 5, "MF": 3, "FW": 2},
+    "5-2-1-2": {"DF": 5, "MF": 3, "FW": 2},
+    "5-4-1": {"DF": 5, "MF": 4, "FW": 1},
+}
+
+# تاکتیک‌ها: روی قدرت حمله و دفاع تیم تاثیر می‌ذارن
+TACTICS = {
+    "standard": {"label": "استاندارد", "emoji": "⚖️", "atk": 1.00, "def": 1.00},
+    "tiki_taka": {"label": "تیکی‌تاکا", "emoji": "🔄", "atk": 1.15, "def": 1.10},
+    "press": {"label": "پرس سنگین", "emoji": "🔥", "atk": 1.30, "def": 0.75},
+    "park_bus": {"label": "اتوبوسی", "emoji": "🚌", "atk": 0.65, "def": 1.40},
+    "counter": {"label": "ضدحمله", "emoji": "⚡", "atk": 1.00, "def": 1.20},
+    "wings": {"label": "بازی از جناحین", "emoji": "↔️", "atk": 1.20, "def": 0.95},
+}
+
+# هزینه‌ی ارتقای هر سطح ورزشگاه (به میلیون تومان) و افزایش ظرفیت/تاثیرش
+STADIUM_UPGRADE_BASE_COST = 15
+STADIUM_MAX_LEVEL = 10
+
+# شانس مصدومیت هر بازیکن ترکیب اصلی بعد از یه بازی رسمی، و طول مدت مصدومیت (تعداد بازی)
+INJURY_CHANCE = 0.06
+INJURY_MIN_MATCHES = 1
+INJURY_MAX_MATCHES = 3
 
 # قیمت بازیکنایی که آکادمی تولید می‌کنه (بین این دو عدد رندوم انتخاب می‌شه)
 ACADEMY_MIN_PRICE = 2
@@ -212,6 +245,8 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN last_battle_date TEXT")
         if not _has_column("users", "last_academy_date"):
             conn.execute("ALTER TABLE users ADD COLUMN last_academy_date TEXT")
+        if not _has_column("users", "last_statement_date"):
+            conn.execute("ALTER TABLE users ADD COLUMN last_statement_date TEXT")
         if not _has_column("users", "team_name"):
             conn.execute("ALTER TABLE users ADD COLUMN team_name TEXT")
         if not _has_column("users", "kit_color1"):
@@ -220,6 +255,49 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN kit_color2 TEXT")
         if not _has_column("users", "sponsor"):
             conn.execute("ALTER TABLE users ADD COLUMN sponsor TEXT")
+        if not _has_column("users", "formation"):
+            conn.execute("ALTER TABLE users ADD COLUMN formation TEXT")
+        if not _has_column("users", "tactic"):
+            conn.execute("ALTER TABLE users ADD COLUMN tactic TEXT DEFAULT 'standard'")
+        if not _has_column("users", "stadium_level"):
+            conn.execute("ALTER TABLE users ADD COLUMN stadium_level INTEGER DEFAULT 1")
+        if not _has_column("users", "fans"):
+            conn.execute("ALTER TABLE users ADD COLUMN fans INTEGER DEFAULT 1000")
+        if not _has_column("users", "foot_tokens"):
+            conn.execute("ALTER TABLE users ADD COLUMN foot_tokens INTEGER DEFAULT 0")
+        if not _has_column("user_players", "injury_matches_left"):
+            conn.execute("ALTER TABLE user_players ADD COLUMN injury_matches_left INTEGER DEFAULT 0")
+        if not _has_column("user_players", "season_points"):
+            conn.execute("ALTER TABLE user_players ADD COLUMN season_points REAL DEFAULT 0")
+        if not _has_column("user_players", "owned_power"):
+            conn.execute("ALTER TABLE user_players ADD COLUMN owned_power REAL")
+            # هر بازیکنی که قبلاً به یه تیم اضافه شده، قدرتش رو از کاتالوگ فعلی اسنپ‌شات می‌گیریم
+            conn.execute("""
+                UPDATE user_players
+                SET owned_power = (SELECT power FROM players WHERE players.player_id = user_players.player_id)
+                WHERE owned_power IS NULL
+            """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_lineup (
+            user_id INTEGER,
+            player_id INTEGER,
+            PRIMARY KEY (user_id, player_id)
+        )
+        """)
+
+        # کدوم تیم‌ها این فصل قبلاً با هم بازی کردن (برای اینکه لیگ خودکار دوباره تکرارشون نکنه
+        # و تیم تازه‌وارد فقط با کسایی که هنوز باهاشون بازی نکرده جفت بشه)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS fixtures (
+            user_a INTEGER,
+            user_b INTEGER,
+            PRIMARY KEY (user_a, user_b)
+        )
+        """)
+        if not _has_column("fixtures", "legs_played"):
+            # هرچی از قبل توی جدول بود یعنی یه بار (رفت) بازی شده
+            conn.execute("ALTER TABLE fixtures ADD COLUMN legs_played INTEGER DEFAULT 1")
 
 
 def seed_players_if_empty():
@@ -329,6 +407,56 @@ def sponsor_keyboard() -> InlineKeyboardMarkup:
 def set_user_sponsor(user_id: int, sponsor_key: str):
     with get_conn() as conn:
         conn.execute("UPDATE users SET sponsor = ? WHERE user_id = ?", (sponsor_key, user_id))
+
+
+def lineup_tactics_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 چیدن ترکیب (فرمیشن)", callback_data="lineup_formations")],
+        [InlineKeyboardButton("🎯 انتخاب تاکتیک", callback_data="tactic_pick")],
+        [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="admin_back")],
+    ])
+
+
+def formation_keyboard() -> InlineKeyboardMarkup:
+    rows = []
+    row = []
+    for key in FORMATIONS:
+        row.append(InlineKeyboardButton(key, callback_data=f"setformation_{key}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="menu_lineup_tactics")])
+    return InlineKeyboardMarkup(rows)
+
+
+def tactic_keyboard() -> InlineKeyboardMarkup:
+    rows = []
+    for key, t in TACTICS.items():
+        rows.append([InlineKeyboardButton(f"{t['emoji']} {t['label']}", callback_data=f"settactic_{key}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="menu_lineup_tactics")])
+    return InlineKeyboardMarkup(rows)
+
+
+def lineup_pick_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """چک‌لیست بازیکن‌های تیم (غیرمصدوم) برای انتخاب ترکیب اصلی، به تفکیک پست"""
+    required = get_lineup_required_counts(user_id) or {}
+    counts = get_lineup_position_counts(user_id)
+    lineup_ids = {p["player_id"] for p in get_user_lineup(user_id)}
+    squad = get_available_squad(user_id)
+
+    rows = []
+    for p in squad:
+        checked = "✅" if p["player_id"] in lineup_ids else "▫️"
+        pos = p["position"]
+        need = required.get(pos, 0)
+        have = counts.get(pos, 0)
+        label = f"{checked} {POSITION_FA.get(pos, pos)} | {p['name']} ({have}/{need})"
+        rows.append([InlineKeyboardButton(label, callback_data=f"togglelineup_{p['player_id']}")])
+    rows.append([InlineKeyboardButton("✅ ثبت ترکیب", callback_data="lineup_confirm")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="menu_lineup_tactics")])
+    return InlineKeyboardMarkup(rows)
 
 
 def edit_team_menu_keyboard() -> InlineKeyboardMarkup:
@@ -441,7 +569,11 @@ def get_user_team(user_id: int):
     with get_conn() as conn:
         c = conn.cursor()
         c.execute("""
-            SELECT p.* FROM players p
+            SELECT p.player_id, p.name, p.team, p.position, p.price,
+                   COALESCE(up.owned_power, p.power) as power,
+                   p.week_points, p.total_points,
+                   up.season_points as season_points, up.injury_matches_left as injury_matches_left
+            FROM players p
             JOIN user_players up ON up.player_id = p.player_id
             WHERE up.user_id = ?
             ORDER BY p.position
@@ -467,10 +599,17 @@ def is_player_in_team(user_id: int, player_id: int) -> bool:
 
 
 def add_player_to_team(user_id: int, player_id: int):
+    """بازیکن رو به تیم کاربر اضافه می‌کنه و قدرت فعلی کاتالوگ رو به‌عنوان قدرت مخصوص این تیم
+    اسنپ‌شات می‌گیره — اینجوری اگه بعداً همین بازیکن رو یه تیم دیگه هم داشته باشه، ارتقای هرکدوم
+    کاملاً جدا از اون یکی حساب می‌شه"""
     with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("SELECT power FROM players WHERE player_id = ?", (player_id,))
+        row = c.fetchone()
+        base_power = row["power"] if row else 0
         conn.execute(
-            "INSERT INTO user_players (user_id, player_id) VALUES (?, ?)",
-            (user_id, player_id),
+            "INSERT INTO user_players (user_id, player_id, owned_power) VALUES (?, ?, ?)",
+            (user_id, player_id, base_power),
         )
 
 
@@ -480,13 +619,17 @@ def remove_player_from_team(user_id: int, player_id: int):
             "DELETE FROM user_players WHERE user_id = ? AND player_id = ?",
             (user_id, player_id),
         )
+        conn.execute(
+            "DELETE FROM user_lineup WHERE user_id = ? AND player_id = ?",
+            (user_id, player_id),
+        )
 
 
 def get_user_team_power(user_id: int) -> float:
     with get_conn() as conn:
         c = conn.cursor()
         c.execute("""
-            SELECT COALESCE(SUM(p.power), 0) as total
+            SELECT COALESCE(SUM(COALESCE(up.owned_power, p.power)), 0) as total
             FROM players p
             JOIN user_players up ON up.player_id = p.player_id
             WHERE up.user_id = ?
@@ -510,6 +653,186 @@ def get_team_position_counts(user_id: int) -> dict:
             if row["position"] in counts:
                 counts[row["position"]] = row["cnt"]
     return counts
+
+
+# ================== ترکیب اصلی (Lineup) و تاکتیک ==================
+
+def get_injured_squad_ids(user_id: int) -> set:
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT player_id FROM user_players WHERE user_id = ? AND injury_matches_left > 0",
+            (user_id,),
+        )
+        return {row["player_id"] for row in c.fetchall()}
+
+
+def get_available_squad(user_id: int):
+    """بازیکن‌های تیم که الان مصدوم نیستن"""
+    injured = get_injured_squad_ids(user_id)
+    return [p for p in get_user_team(user_id) if p["player_id"] not in injured]
+
+
+def get_injured_players(user_id: int):
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT p.*, up.injury_matches_left FROM players p
+            JOIN user_players up ON up.player_id = p.player_id
+            WHERE up.user_id = ? AND up.injury_matches_left > 0
+        """, (user_id,))
+        return c.fetchall()
+
+
+def set_formation(user_id: int, formation_key: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET formation = ? WHERE user_id = ?", (formation_key, user_id))
+        conn.execute("DELETE FROM user_lineup WHERE user_id = ?", (user_id,))  # با عوض شدن آرایش، ترکیب قبلی پاک می‌شه
+
+
+def clear_lineup(user_id: int):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM user_lineup WHERE user_id = ?", (user_id,))
+
+
+def toggle_lineup_player(user_id: int, player_id: int) -> bool:
+    """اگه توی ترکیب بود درش میاره، وگرنه اضافه می‌کنه. True برمی‌گردونه یعنی الان اضافه شده."""
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM user_lineup WHERE user_id = ? AND player_id = ?", (user_id, player_id))
+        if c.fetchone():
+            conn.execute("DELETE FROM user_lineup WHERE user_id = ? AND player_id = ?", (user_id, player_id))
+            return False
+        conn.execute("INSERT INTO user_lineup (user_id, player_id) VALUES (?, ?)", (user_id, player_id))
+        return True
+
+
+def get_user_lineup(user_id: int):
+    """بازیکن‌های ترکیب اصلی فعلی (فقط اونایی که مصدوم نشدن)"""
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT p.player_id, p.name, p.team, p.position, p.price,
+                   COALESCE(up.owned_power, p.power) as power,
+                   p.week_points, p.total_points
+            FROM players p
+            JOIN user_lineup ul ON ul.player_id = p.player_id
+            JOIN user_players up ON up.player_id = p.player_id AND up.user_id = ul.user_id
+            WHERE ul.user_id = ? AND up.injury_matches_left = 0
+        """, (user_id,))
+        return c.fetchall()
+
+
+def get_lineup_position_counts(user_id: int) -> dict:
+    counts = {"GK": 0, "DF": 0, "MF": 0, "FW": 0}
+    for p in get_user_lineup(user_id):
+        if p["position"] in counts:
+            counts[p["position"]] += 1
+    return counts
+
+
+def get_lineup_required_counts(user_id: int):
+    """بر اساس آرایش انتخابی، تعداد لازم هر پست رو برمی‌گردونه (دروازه‌بان همیشه ۱)"""
+    row = get_user_row(user_id)
+    formation_key = row["formation"] if row and row["formation"] in FORMATIONS else None
+    if not formation_key:
+        return None
+    req = dict(FORMATIONS[formation_key])
+    req["GK"] = 1
+    return req
+
+
+def is_lineup_complete(user_id: int) -> bool:
+    required = get_lineup_required_counts(user_id)
+    if not required:
+        return False
+    counts = get_lineup_position_counts(user_id)
+    return all(counts.get(pos, 0) == need for pos, need in required.items())
+
+
+def get_match_power(user_id: int) -> float:
+    """قدرت موثر تیم برای بازی: اگه ترکیب اصلی کامل چیده شده باشه از همون استفاده می‌کنه
+    (که فقط ۱۱ نفره)، وگرنه (برای سازگاری با تیم‌هایی که هنوز ترکیب نچیدن) از کل بازیکن‌های
+    غیرمصدوم تیم استفاده می‌کنه."""
+    if is_lineup_complete(user_id):
+        return sum(p["power"] for p in get_user_lineup(user_id))
+    return sum(p["power"] for p in get_available_squad(user_id))
+
+
+def set_user_tactic(user_id: int, tactic_key: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET tactic = ? WHERE user_id = ?", (tactic_key, user_id))
+
+
+def get_user_tactic(user_id: int) -> str:
+    row = get_user_row(user_id)
+    t = row["tactic"] if row and row["tactic"] in TACTICS else "standard"
+    return t
+
+
+# ================== ورزشگاه و هواداران ==================
+
+def get_stadium_upgrade_cost(current_level: int) -> int:
+    return STADIUM_UPGRADE_BASE_COST * current_level
+
+
+def upgrade_stadium(user_id: int) -> str:
+    row = get_user_row(user_id)
+    level = row["stadium_level"] or 1
+    if level >= STADIUM_MAX_LEVEL:
+        return f"ورزشگاهت همین الانشم توی حداکثر سطح ({STADIUM_MAX_LEVEL}) هست."
+    cost = get_stadium_upgrade_cost(level)
+    budget = get_user_budget(user_id)
+    if budget < cost:
+        return f"برای ارتقا به سطح {level+1} به {cost} م.ت نیاز داری؛ بودجه‌ت {budget:.1f} م.ت هست."
+    update_user_budget(user_id, budget - cost)
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET stadium_level = stadium_level + 1 WHERE user_id = ?", (user_id,))
+    return f"🏟 ورزشگاهت به سطح {level+1} ارتقا پیدا کرد! ({cost} م.ت کم شد)"
+
+
+def update_fans(user_id: int, delta: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET fans = MAX(0, fans + ?) WHERE user_id = ?",
+            (delta, user_id),
+        )
+
+
+def apply_match_gate_income(user_id: int):
+    """درآمد فروش بلیت بر اساس تعداد هواداران و سطح ورزشگاه، بعد از هر بازی رسمی"""
+    row = get_user_row(user_id)
+    fans = row["fans"] or 0
+    level = row["stadium_level"] or 1
+    income = (fans // 1000) * level
+    if income > 0:
+        update_user_budget(user_id, get_user_budget(user_id) + income)
+    return income
+
+
+# ================== مصدومیت ==================
+
+def process_injuries_after_match(user_id: int, played_player_ids: list):
+    """بعد از هر بازی رسمی: هر بازیکنی که بازی کرده یه شانس کوچیک مصدومیتِ چند بازی داره،
+    و شمارش‌معکوس مصدومیت‌های قبلیِ کل بازیکنای تیم هم یکی کم می‌شه"""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE user_players SET injury_matches_left = MAX(0, injury_matches_left - 1) WHERE user_id = ?",
+            (user_id,),
+        )
+    new_injuries = []
+    for pid in played_player_ids:
+        if random.random() < INJURY_CHANCE:
+            duration = random.randint(INJURY_MIN_MATCHES, INJURY_MAX_MATCHES)
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE user_players SET injury_matches_left = ? WHERE user_id = ? AND player_id = ?",
+                    (duration, user_id, pid),
+                )
+            player = get_player(pid)
+            if player:
+                new_injuries.append((player["name"], duration))
+    return new_injuries
 
 
 def get_missing_positions_text(user_id: int):
@@ -576,8 +899,8 @@ def get_all_matchday_eligible_users():
 
 
 def get_matchday_eligible_users():
-    """نسخه‌ی سقف‌دار: حداکثر MAX_MATCHDAY_TEAMS تیم برتر (بر اساس امتیاز لیگ) رو برمی‌گردونه"""
-    return get_all_matchday_eligible_users()[:MAX_MATCHDAY_TEAMS]
+    """همه‌ی تیم‌های آماده رو برمی‌گردونه، بدون هیچ سقفی"""
+    return get_all_matchday_eligible_users()
 
 
 def get_all_teams_for_manual():
@@ -613,11 +936,18 @@ def manual_teams_keyboard(exclude_id: int = None) -> InlineKeyboardMarkup:
 
 
 async def play_one_match(bot, user_a: int, user_b: int) -> str:
-    """یه بازی بین دو تیم مشخص برگزار می‌کنه: نتیجه رو ثبت می‌کنه، پاداش اسپانسر رو می‌ده،
-    به هر دو طرف خصوصی پیام می‌ده و خط نتیجه (برای نمایش/کانال) رو برمی‌گردونه."""
-    power_a = get_user_team_power(user_a)
-    power_b = get_user_team_power(user_b)
-    goals_a, goals_b = simulate_goals(power_a, power_b)
+    """یه بازی رسمی (لیگ/دستی) بین دو تیم مشخص برگزار می‌کنه: تاکتیک و ترکیب اصلی رو حساب می‌کنه،
+    نتیجه، گل‌زن‌ها، پاس‌گل‌ها، بهترین بازیکن زمین، هواداران، درآمد ورزشگاه، مصدومیت و پاداش اسپانسر
+    رو مدیریت می‌کنه، به هر دو طرف خصوصی پیام می‌ده و خط نتیجه (برای نمایش/کانال) رو برمی‌گردونه."""
+    base_power_a = get_match_power(user_a)
+    base_power_b = get_match_power(user_b)
+
+    tactic_a = TACTICS[get_user_tactic(user_a)]
+    tactic_b = TACTICS[get_user_tactic(user_b)]
+    adj_power_a = (base_power_a + 1) * tactic_a["atk"] / tactic_b["def"]
+    adj_power_b = (base_power_b + 1) * tactic_b["atk"] / tactic_a["def"]
+
+    goals_a, goals_b = simulate_goals(adj_power_a, adj_power_b)
 
     if goals_a == goals_b:
         record_battle_result(user_a, user_b, is_draw=True)
@@ -631,6 +961,8 @@ async def play_one_match(bot, user_a: int, user_b: int) -> str:
         record_battle_result(user_b, user_a)
         result_a = "😔 باختی."
         result_b = f"🏆 بردی! {WIN_POINTS} امتیاز گرفتی."
+
+    record_fixture(user_a, user_b)
 
     row_a = get_user_row(user_a)
     row_b = get_user_row(user_b)
@@ -651,12 +983,63 @@ async def play_one_match(bot, user_a: int, user_b: int) -> str:
     set_last_action_date(user_a, "last_battle_date", get_today_str())
     set_last_action_date(user_b, "last_battle_date", get_today_str())
 
-    timeline = generate_goal_timeline(user_a, user_b, goals_a, goals_b)
+    # ---- ترکیب واقعی بازی‌کننده‌ها، گل‌زن‌ها و پاس‌گل‌ها ----
+    players_a = get_match_participants(user_a)
+    players_b = get_match_participants(user_b)
+    events = build_match_events(players_a, players_b, goals_a, goals_b)
+    timeline = format_match_events(events)
     timeline_block = f"\n\n⚽ گل‌ها:\n{timeline}" if timeline else ""
 
+    # ---- امتیاز بازیکنان و بهترین بازیکن زمین ----
+    scores_a = compute_match_scores(players_a, events, "a", goals_b)
+    scores_b = compute_match_scores(players_b, events, "b", goals_a)
+    apply_match_scores(user_a, scores_a)
+    apply_match_scores(user_b, scores_b)
+
+    mvp_text = ""
+    best_pid_a = max(scores_a, key=scores_a.get) if scores_a else None
+    best_pid_b = max(scores_b, key=scores_b.get) if scores_b else None
+    candidates = []
+    if best_pid_a:
+        candidates.append((scores_a[best_pid_a], best_pid_a, players_a, name_a))
+    if best_pid_b:
+        candidates.append((scores_b[best_pid_b], best_pid_b, players_b, name_b))
+    if candidates:
+        best_score, best_pid, best_players, best_team_name = max(candidates, key=lambda x: x[0])
+        best_player = next((p for p in best_players if p["player_id"] == best_pid), None)
+        if best_player:
+            mvp_text = f"\n\n⭐ بهترین بازیکن زمین: {best_player['name']} ({best_team_name})"
+
+    # ---- هواداران ----
+    if goals_a > goals_b:
+        update_fans(user_a, random.randint(50, 150))
+        update_fans(user_b, -random.randint(20, 80))
+    elif goals_b > goals_a:
+        update_fans(user_b, random.randint(50, 150))
+        update_fans(user_a, -random.randint(20, 80))
+    else:
+        update_fans(user_a, random.randint(5, 25))
+        update_fans(user_b, random.randint(5, 25))
+
+    # ---- درآمد فروش بلیت ورزشگاه ----
+    income_a = apply_match_gate_income(user_a)
+    income_b = apply_match_gate_income(user_b)
+    income_note_a = f"\n🏟 درآمد بلیت: +{income_a} م.ت" if income_a > 0 else ""
+    income_note_b = f"\n🏟 درآمد بلیت: +{income_b} م.ت" if income_b > 0 else ""
+
+    # ---- مصدومیت ----
+    injuries_a = process_injuries_after_match(user_a, [p["player_id"] for p in players_a])
+    injuries_b = process_injuries_after_match(user_b, [p["player_id"] for p in players_b])
+    injury_note_a = ""
+    if injuries_a:
+        injury_note_a = "\n\n🚑 مصدومیت:\n" + "\n".join(f"{n} ({d} بازی محروم)" for n, d in injuries_a)
+    injury_note_b = ""
+    if injuries_b:
+        injury_note_b = "\n\n🚑 مصدومیت:\n" + "\n".join(f"{n} ({d} بازی محروم)" for n, d in injuries_b)
+
     for target_id, text in (
-        (user_a, f"⚔️ نتیجه بازی:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}\n\n{result_a}{bonus_note_a}"),
-        (user_b, f"⚔️ نتیجه بازی:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}\n\n{result_b}{bonus_note_b}"),
+        (user_a, f"⚔️ نتیجه بازی:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}{mvp_text}\n\n{result_a}{bonus_note_a}{income_note_a}{injury_note_a}"),
+        (user_b, f"⚔️ نتیجه بازی:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}{mvp_text}\n\n{result_b}{bonus_note_b}{income_note_b}{injury_note_b}"),
     ):
         try:
             await bot.send_message(chat_id=target_id, text=text)
@@ -667,12 +1050,16 @@ async def play_one_match(bot, user_a: int, user_b: int) -> str:
 
 
 async def play_friendly_match(bot, requester_id: int, opponent_id: int) -> str:
-    """بازی دوستانه بین دو کاربر: نتیجه واقعیه و بر اساس قدرت تیم‌هاست، ولی هیچ تاثیری روی
-    امتیاز/برد/باخت جدول لیگ یا درآمد اسپانسر نداره (فقط برای تفریحه).
-    متن نتیجه برای درخواست‌دهنده برگردونده می‌شه؛ به حریف هم خصوصی پیام می‌ره."""
-    power_a = get_user_team_power(requester_id)
-    power_b = get_user_team_power(opponent_id)
-    goals_a, goals_b = simulate_goals(power_a, power_b)
+    """بازی دوستانه بین دو کاربر: نتیجه واقعیه، تاکتیک و ترکیب اصلی هم حساب می‌شه،
+    ولی هیچ تاثیری روی امتیاز/برد/باخت جدول لیگ، درآمد اسپانسر، هواداران یا مصدومیت نداره
+    (فقط برای تفریحه). متن نتیجه برای درخواست‌دهنده برگردونده می‌شه؛ به حریف هم خصوصی پیام می‌ره."""
+    base_power_a = get_match_power(requester_id)
+    base_power_b = get_match_power(opponent_id)
+    tactic_a = TACTICS[get_user_tactic(requester_id)]
+    tactic_b = TACTICS[get_user_tactic(opponent_id)]
+    adj_power_a = (base_power_a + 1) * tactic_a["atk"] / tactic_b["def"]
+    adj_power_b = (base_power_b + 1) * tactic_b["atk"] / tactic_a["def"]
+    goals_a, goals_b = simulate_goals(adj_power_a, adj_power_b)
 
     row_a = get_user_row(requester_id)
     row_b = get_user_row(opponent_id)
@@ -687,7 +1074,10 @@ async def play_friendly_match(bot, requester_id: int, opponent_id: int) -> str:
         result_a = result_b = "🤝 مساوی شد."
 
     footer = "\n\n(این یه بازی دوستانه بود، روی جدول لیگ و درآمد اسپانسر تاثیری نداره)"
-    timeline = generate_goal_timeline(requester_id, opponent_id, goals_a, goals_b)
+    players_a = get_match_participants(requester_id)
+    players_b = get_match_participants(opponent_id)
+    events = build_match_events(players_a, players_b, goals_a, goals_b)
+    timeline = format_match_events(events)
     timeline_block = f"\n\n⚽ گل‌ها:\n{timeline}" if timeline else ""
     text_a = f"🤝 بازی دوستانه:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}\n\n{result_a}{footer}"
     text_b = f"🤝 بازی دوستانه:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}\n\n{result_b}{footer}"
@@ -729,33 +1119,86 @@ def friendly_opponents_keyboard(exclude_id: int) -> InlineKeyboardMarkup:
 
 
 async def run_matchday(bot) -> str:
-    """همه‌ی تیم‌های آماده رو به‌صورت دوره‌ای (لیگی) با هم بازی می‌ده — یعنی هر تیم دقیقاً یک‌بار
-    با تک‌تک بقیه‌ی تیم‌ها بازی می‌کنه، نه فقط با یه حریف تصادفی.
+    """همه‌ی تیم‌های آماده رو به‌صورت دوره‌ای (لیگی) با هم بازی می‌ده — هر جفت تیم رفت و برگشت
+    (دقیقاً ۲ بار) با هم بازی می‌کنن؛ جفت‌هایی که هر دو بازیشون تموم شده دیگه تکرار نمی‌شن.
+    این یعنی اگه یه تیم وسط فصل بیاد، خودکار فقط با بقیه‌ی تیم‌ها (که هنوز رفت‌وبرگشتشون تموم نشده) جفت می‌شه.
     به هر بازیکن نتیجه‌ی بازی‌هاش خصوصی می‌رسه و خلاصه‌ی کامل هم به کانال (اگه تنظیم شده باشه) پست می‌شه."""
     eligible = get_matchday_eligible_users()
     match_lines = []
+    skipped_already_played = 0
 
     if len(eligible) < 2:
         return "⚠️ برای برگزاری بازی حداقل به ۲ تیم آماده نیاز داریم."
 
-    # هر تیم دقیقاً یک‌بار با هر تیم دیگه بازی می‌کنه (لیگ کامل، بدون تصادف)
+    # هر جفت تیم رفت و برگشت (۲ بار) با هم بازی می‌کنن؛ جفت‌هایی که کامل شدن رد می‌شن
     for idx_a in range(len(eligible)):
         for idx_b in range(idx_a + 1, len(eligible)):
-            line = await play_one_match(bot, eligible[idx_a], eligible[idx_b])
+            user_a, user_b = eligible[idx_a], eligible[idx_b]
+            if has_played_fixture(user_a, user_b):
+                skipped_already_played += 1
+                continue
+            line = await play_one_match(bot, user_a, user_b)
             match_lines.append(line)
 
     if match_lines:
-        channel_text = "⚽️ نتایج بازی‌های امروز (لیگ کامل):\n\n" + "\n".join(match_lines)
+        channel_text = "⚽️ نتایج بازی‌های امروز:\n\n" + "\n".join(match_lines)
         if CHANNEL_ID:
             try:
                 await bot.send_message(chat_id=CHANNEL_ID, text=channel_text)
             except Exception as e:
                 logger.warning(f"ارسال نتایج به کانال ناموفق بود: {e}")
 
-    summary = f"✅ روز بازی تموم شد. {len(eligible)} تیم شرکت کردن و {len(match_lines)} بازی برگزار شد (هر تیم با همه‌ی بقیه بازی کرد)."
+    summary = f"✅ روز بازی تموم شد. {len(eligible)} تیم شرکت کردن و {len(match_lines)} بازی جدید برگزار شد."
+    if skipped_already_played:
+        summary += f"\n({skipped_already_played} جفت رفت‌وبرگشتشون قبلاً کامل شده بود، دوباره بازی نکردن.)"
+    if not match_lines:
+        summary += "\n\nهمه‌ی تیم‌های آماده رفت‌وبرگشتشون کامل شده؛ چیز جدیدی برای بازی نبود."
     if not CHANNEL_ID:
         summary += "\n\n⚠️ آیدی کانال تنظیم نشده، برای همین نتایج فقط به خود بازیکنا پیام خصوصی شد."
     return summary
+
+
+def render_final_season_table() -> str:
+    rows = get_leaderboard(50)
+    if not rows:
+        return "🏁 فصل تموم شد، ولی هیچ تیمی امتیازی نداشت."
+    lines = ["🏁 فصل به پایان رسید! همه‌ی تیم‌ها رفت و برگشت با هم بازی کردن.\n", "🏅 جدول نهایی لیگ:\n"]
+    medals = ["🥇", "🥈", "🥉"]
+    for i, r in enumerate(rows):
+        games = (r["wins"] or 0) + (r["draws"] or 0) + (r["losses"] or 0)
+        avg = (r["total_points"] / games) if games > 0 else 0.0
+        prefix = medals[i] if i < 3 else f"{i+1}."
+        lines.append(f"{prefix} {team_display_name(r)} - میانگین {avg:.2f} ({games} بازی، {r['total_points']:.1f} امتیاز کل)")
+    champion = team_display_name(rows[0])
+    lines.append(f"\n🏆 قهرمان فصل: {champion} 🏆")
+    return "\n".join(lines)
+
+
+async def auto_matchday_job(context: ContextTypes.DEFAULT_TYPE):
+    """این تابع هر ۵ ساعت خودکار اجرا می‌شه: یه دور بازی برگزار می‌کنه، و اگه همه‌ی تیم‌ها
+    رفت‌وبرگشتشون تموم شده باشه، جدول نهایی و قهرمان رو اعلام می‌کنه و خودش متوقف می‌شه."""
+    bot = context.bot
+    try:
+        summary = await run_matchday(bot)
+        logger.info(f"اجرای خودکار فصل: {summary}")
+    except Exception as e:
+        logger.warning(f"خطا توی اجرای خودکار فصل: {e}")
+        return
+
+    if is_season_complete():
+        final_text = render_final_season_table()
+        if CHANNEL_ID:
+            try:
+                await bot.send_message(chat_id=CHANNEL_ID, text=final_text)
+            except Exception as e:
+                logger.warning(f"ارسال جدول نهایی به کانال ناموفق بود: {e}")
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(chat_id=admin_id, text="✅ فصل خودکار تموم شد و متوقف شد.\n\n" + final_text)
+            except Exception:
+                pass
+        if context.job:
+            context.job.schedule_removal()
 
 
 def _poisson_random(lam: float) -> int:
@@ -787,47 +1230,105 @@ def simulate_goals(power_a: float, power_b: float):
     return _poisson_random(avg_a), _poisson_random(avg_b)
 
 
-def pick_scorer(team_id: int):
-    """یه بازیکن رو برای زدن گل انتخاب می‌کنه: دروازه‌بان هیچ‌وقت انتخاب نمی‌شه،
-    مهاجم بیشترین شانس رو داره، بعد هافبک، بعد مدافع. بازیکن‌های قوی‌تر هم شانس بیشتری دارن."""
-    team = get_user_team(team_id)
-    weighted = []
-    for p in team:
-        weight = POSITION_SCORE_WEIGHT.get(p["position"], 0) * (p["power"] + 1)
-        if weight > 0:
-            weighted.append((p, weight))
-    if not weighted:
+def get_match_participants(user_id: int):
+    """بازیکن‌هایی که واقعاً توی این بازی حساب می‌شن: اگه ترکیب اصلی کامل چیده شده، همون ۱۱ نفر،
+    وگرنه کل بازیکن‌های غیرمصدوم تیم (برای سازگاری با تیم‌هایی که هنوز ترکیب نچیدن)"""
+    if is_lineup_complete(user_id):
+        return get_user_lineup(user_id)
+    return get_available_squad(user_id)
+
+
+# شانس نسبی هر پست برای پاس گل دادن (پلی‌میکر و هافبک‌ها بیشتر از همه)
+ASSIST_SCORE_WEIGHT = {"GK": 0, "DF": 1, "MF": 3, "FW": 2}
+ASSIST_CHANCE = 0.55  # احتمال اینکه یه گل روی پاس گل کسی زده بشه (نه گل تنهایی)
+
+
+def _weighted_pick(weighted_pairs):
+    if not weighted_pairs:
         return None
-    total = sum(w for _, w in weighted)
+    total = sum(w for _, w in weighted_pairs)
     r = random.uniform(0, total)
     upto = 0
-    for p, w in weighted:
+    for p, w in weighted_pairs:
         upto += w
         if upto >= r:
             return p
-    return weighted[-1][0]
+    return weighted_pairs[-1][0]
 
 
-def generate_goal_timeline(team_a: int, team_b: int, goals_a: int, goals_b: int) -> str:
-    """برای هر گل، یه بازیکن گلزن (با احتمال بر اساس پست) و یه دقیقه‌ی تصادفی می‌سازه
-    و خط‌به‌خط (به ترتیب دقیقه) برمی‌گردونه. اگه هیچ گلی نباشه، رشته‌ی خالی می‌ده."""
+def pick_scorer(players):
+    """یه گلزن از بین بازیکن‌های بازی‌کننده انتخاب می‌کنه: دروازه‌بان هیچ‌وقت انتخاب نمی‌شه،
+    مهاجم بیشترین شانس رو داره، بعد هافبک، بعد مدافع. بازیکن‌های قوی‌تر هم شانس بیشتری دارن."""
+    weighted = [
+        (p, POSITION_SCORE_WEIGHT.get(p["position"], 0) * (p["power"] + 1))
+        for p in players
+    ]
+    weighted = [(p, w) for p, w in weighted if w > 0]
+    return _weighted_pick(weighted)
+
+
+def pick_assister(players, exclude_player_id):
+    weighted = [
+        (p, ASSIST_SCORE_WEIGHT.get(p["position"], 0) * (p["power"] + 1))
+        for p in players if p["player_id"] != exclude_player_id
+    ]
+    weighted = [(p, w) for p, w in weighted if w > 0]
+    return _weighted_pick(weighted)
+
+
+def build_match_events(team_a_players, team_b_players, goals_a, goals_b):
+    """برای هر گل یه گلزن (و شاید یه پاس‌گل‌دهنده) و یه دقیقه‌ی تصادفی می‌سازه"""
     events = []
     for _ in range(goals_a):
-        scorer = pick_scorer(team_a)
-        name = scorer["name"] if scorer else "نامشخص"
-        events.append((random.randint(1, 90), "a", name))
+        scorer = pick_scorer(team_a_players)
+        assister = pick_assister(team_a_players, scorer["player_id"]) if scorer and random.random() < ASSIST_CHANCE else None
+        events.append({"minute": random.randint(1, 90), "side": "a", "scorer": scorer, "assister": assister})
     for _ in range(goals_b):
-        scorer = pick_scorer(team_b)
-        name = scorer["name"] if scorer else "نامشخص"
-        events.append((random.randint(1, 90), "b", name))
+        scorer = pick_scorer(team_b_players)
+        assister = pick_assister(team_b_players, scorer["player_id"]) if scorer and random.random() < ASSIST_CHANCE else None
+        events.append({"minute": random.randint(1, 90), "side": "b", "scorer": scorer, "assister": assister})
+    events.sort(key=lambda e: e["minute"])
+    return events
+
+
+def format_match_events(events) -> str:
     if not events:
         return ""
-    events.sort(key=lambda e: e[0])
     lines = []
-    for minute, side, name in events:
-        arrow = "⬅️" if side == "a" else "➡️"
-        lines.append(f"{minute}' {arrow} {name}")
+    for e in events:
+        arrow = "⬅️" if e["side"] == "a" else "➡️"
+        scorer_name = e["scorer"]["name"] if e["scorer"] else "نامشخص"
+        line = f"{e['minute']}' {arrow} {scorer_name}"
+        if e["assister"]:
+            line += f" (پاس گل: {e['assister']['name']})"
+        lines.append(line)
     return "\n".join(lines)
+
+
+def compute_match_scores(players, events, side, conceded_goals):
+    """امتیاز هر بازیکن توی این بازی رو حساب می‌کنه: گل=۴، پاس‌گل=۲، حضور=۱، کلین‌شیت برای مدافع/دروازه‌بان=۲"""
+    scores = {p["player_id"]: 1.0 for p in players}  # امتیاز حضور
+    for e in events:
+        if e["side"] != side:
+            continue
+        if e["scorer"]:
+            scores[e["scorer"]["player_id"]] = scores.get(e["scorer"]["player_id"], 0) + 4
+        if e["assister"]:
+            scores[e["assister"]["player_id"]] = scores.get(e["assister"]["player_id"], 0) + 2
+    if conceded_goals == 0:
+        for p in players:
+            if p["position"] in ("GK", "DF"):
+                scores[p["player_id"]] = scores.get(p["player_id"], 0) + 2
+    return scores
+
+
+def apply_match_scores(user_id: int, scores: dict):
+    with get_conn() as conn:
+        for player_id, pts in scores.items():
+            conn.execute(
+                "UPDATE user_players SET season_points = season_points + ? WHERE user_id = ? AND player_id = ?",
+                (pts, user_id, player_id),
+            )
 
 
 def record_battle_result(winner_id: int, loser_id: int, is_draw: bool = False):
@@ -846,22 +1347,87 @@ def record_battle_result(winner_id: int, loser_id: int, is_draw: bool = False):
 
 
 def get_leaderboard(limit: int = 10):
+    """جدول لیگ رو برمی‌گردونه — فقط شامل کاربرایی که الان واقعاً تیم معتبر و کامل دارن،
+    و رتبه‌بندی بر اساس میانگین امتیاز هر بازی (Points Per Game) نه مجموع امتیاز؛ اینجوری تیمی
+    که وسط فصل اومده و بازی کمتری داشته، به‌خاطر تعداد بازی کم ناعادلانه ته جدول نمی‌مونه."""
+    eligible_ids = get_all_matchday_eligible_users()
+    if not eligible_ids:
+        return []
     with get_conn() as conn:
         c = conn.cursor()
-        placeholders = ",".join("?" * len(ADMIN_IDS)) if ADMIN_IDS else "NULL"
+        placeholders = ",".join("?" * len(eligible_ids))
         c.execute(
-            f"SELECT user_id, username, team_name, kit_color1, kit_color2, total_points FROM users "
-            f"WHERE user_id NOT IN ({placeholders}) "
-            f"ORDER BY total_points DESC LIMIT ?",
-            (*ADMIN_IDS, limit),
+            f"SELECT user_id, username, team_name, kit_color1, kit_color2, "
+            f"total_points, wins, draws, losses FROM users "
+            f"WHERE user_id IN ({placeholders})",
+            eligible_ids,
         )
-        return c.fetchall()
+        rows = c.fetchall()
+
+    def games_played(row):
+        return (row["wins"] or 0) + (row["draws"] or 0) + (row["losses"] or 0)
+
+    def ppg(row):
+        games = games_played(row)
+        return (row["total_points"] / games) if games > 0 else 0.0
+
+    rows_sorted = sorted(rows, key=lambda r: (ppg(r), r["total_points"]), reverse=True)
+    return rows_sorted[:limit]
+
+
+def _normalize_pair(user_a: int, user_b: int):
+    return (user_a, user_b) if user_a < user_b else (user_b, user_a)
+
+
+MAX_LEGS_PER_PAIR = 2  # هر جفت تیم رفت و برگشت (۲ بار) با هم بازی می‌کنن
+
+
+def get_fixture_legs(user_a: int, user_b: int) -> int:
+    a, b = _normalize_pair(user_a, user_b)
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("SELECT legs_played FROM fixtures WHERE user_a = ? AND user_b = ?", (a, b))
+        row = c.fetchone()
+        return row["legs_played"] if row else 0
+
+
+def has_played_fixture(user_a: int, user_b: int) -> bool:
+    """آیا این جفت تیم رفت و برگشت (هر دو بازی) رو کامل انجام دادن؟"""
+    return get_fixture_legs(user_a, user_b) >= MAX_LEGS_PER_PAIR
+
+
+def record_fixture(user_a: int, user_b: int):
+    a, b = _normalize_pair(user_a, user_b)
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO fixtures (user_a, user_b, legs_played) VALUES (?, ?, 1)
+            ON CONFLICT(user_a, user_b) DO UPDATE SET legs_played = legs_played + 1
+        """, (a, b))
+
+
+def reset_fixtures():
+    with get_conn() as conn:
+        conn.execute("DELETE FROM fixtures")
+
+
+def is_season_complete() -> bool:
+    """آیا همه‌ی تیم‌های آماده، رفت و برگشت (هر دو بازی) رو با هم انجام دادن؟"""
+    eligible = get_matchday_eligible_users()
+    if len(eligible) < 2:
+        return False
+    for i in range(len(eligible)):
+        for j in range(i + 1, len(eligible)):
+            if get_fixture_legs(eligible[i], eligible[j]) < MAX_LEGS_PER_PAIR:
+                return False
+    return True
 
 
 def reset_league():
-    """امتیاز کل، برد/باخت/مساوی همه کاربرا رو صفر می‌کنه (جدول لیگ ریست می‌شه)"""
+    """امتیاز کل، برد/باخت/مساوی همه کاربرا رو صفر می‌کنه و تاریخچه‌ی بازی‌های قبلی (fixtures) هم
+    پاک می‌شه، یعنی انگار یه فصل تازه شروع شده و همه دوباره باید با همه بازی کنن"""
     with get_conn() as conn:
         conn.execute("UPDATE users SET total_points = 0, wins = 0, draws = 0, losses = 0")
+    reset_fixtures()
 
 
 def remove_all_players():
@@ -952,6 +1518,52 @@ SPONSORS = [
 ]
 SPONSOR_MAP = {key: (label, emoji) for key, label, emoji in SPONSORS}
 
+# پک‌های قابل خرید با فوت توکن. هر بازیکن با (نام, تیم, پست, قیمت, قدرت) مشخص شده —
+# دقیقاً همون مشخصاتی که قبلاً برای این بازیکن‌ها تعیین شده بود.
+PACKS = {
+    "standard": {
+        "label": "🥉 پک معمولی",
+        "cost": 50,
+        "players": [
+            ("مالدینی", "میلان", "DF", 2000, 20),
+            ("بوفون", "یوونتوس", "GK", 2000, 20),
+        ],
+        "bonus_budget": 0,
+    },
+    "advanced": {
+        "label": "🥈 پک پیشرفته",
+        "cost": 70,
+        "players": [
+            ("مودریچ", "رئال مادرید", "MF", 2000, 20),
+            ("نیمار", "بارسلونا", "FW", 2000, 25),
+        ],
+        "bonus_budget": 0,
+    },
+    "semi_special": {
+        "label": "🥇 پک نیمه ویژه",
+        "cost": 100,
+        "players": [
+            ("مسی", "بارسلونا", "FW", 2000, 30),
+            ("رونالدو", "رئال مادرید", "FW", 2000, 30),
+            ("نیمار", "بارسلونا", "FW", 2000, 25),
+        ],
+        "bonus_budget": 50,
+    },
+    "special": {
+        "label": "💎 پک ویژه",
+        "cost": 150,  # ⚠️ قیمتش رو نگفته بودی؛ فرض کردم ۱۵۰، بگو اگه چیز دیگه‌ای مدنظرت بود
+        "players": [
+            ("مسی", "بارسلونا", "FW", 2000, 30),
+            ("رونالدو", "رئال مادرید", "FW", 2000, 30),
+            ("نیمار", "بارسلونا", "FW", 2000, 25),
+            ("مودریچ", "رئال مادرید", "MF", 2000, 20),
+            ("بوفون", "یوونتوس", "GK", 2000, 20),
+            ("مالدینی", "میلان", "DF", 2000, 20),
+        ],
+        "bonus_budget": 100,
+    },
+}
+
 # حداقل تعداد لازم از هر پست برای اینکه تیم اجازه بازی داشته باشه
 REQUIRED_POSITION_COUNTS = {"GK": 1, "DF": 4, "MF": 4, "FW": 3}
 
@@ -973,6 +1585,13 @@ def main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🌱 آکادمی", callback_data="menu_academy"),
         ],
         [
+            InlineKeyboardButton("🎁 پک‌ها", callback_data="menu_packs"),
+            InlineKeyboardButton("🧩 ترکیب و تاکتیک", callback_data="menu_lineup_tactics"),
+        ],
+        [
+            InlineKeyboardButton("🏟 ورزشگاه من", callback_data="menu_stadium"),
+        ],
+        [
             InlineKeyboardButton("🤝 اسپانسر تیم", callback_data="menu_sponsor"),
             InlineKeyboardButton("⚽ بازی دوستانه", callback_data="menu_friendly"),
         ],
@@ -982,7 +1601,10 @@ def main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("📊 آمار من", callback_data="menu_mystats"),
         ],
         [InlineKeyboardButton("🏅 جدول لیگ", callback_data="menu_league")],
-        [InlineKeyboardButton("📰 اخبار", callback_data="menu_news")],
+        [
+            InlineKeyboardButton("📰 اخبار", callback_data="menu_news"),
+            InlineKeyboardButton("📢 بیانیه", callback_data="menu_statement"),
+        ],
     ]
     if is_admin(user_id):
         rows.append([InlineKeyboardButton("🛠 پنل ادمین", callback_data="menu_admin")])
@@ -996,9 +1618,16 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(toggle_label, callback_data="admin_toggle_bot")],
         [InlineKeyboardButton("🎮 شروع بازی‌های امروز", callback_data="admin_matchday")],
         [
-            InlineKeyboardButton("💵 افزودن بودجه", callback_data="admin_give_budget"),
-            InlineKeyboardButton("📰 تنظیم خبر", callback_data="admin_set_news"),
+            InlineKeyboardButton("🚀 شروع فصل خودکار (هر ۵ ساعت)", callback_data="admin_start_auto_season"),
         ],
+        [
+            InlineKeyboardButton("⏹ توقف فصل خودکار", callback_data="admin_stop_auto_season"),
+        ],
+        [
+            InlineKeyboardButton("💵 افزودن بودجه", callback_data="admin_give_budget"),
+            InlineKeyboardButton("🎟 افزودن فوت توکن", callback_data="admin_give_tokens"),
+        ],
+        [InlineKeyboardButton("📰 تنظیم خبر", callback_data="admin_set_news")],
         [
             InlineKeyboardButton("⚽ افزودن بازیکن", callback_data="admin_add_player"),
             InlineKeyboardButton("🗑 حذف بازیکن", callback_data="admin_remove_player"),
@@ -1043,7 +1672,8 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def render_budget(user_id: int) -> str:
     b = get_user_budget(user_id)
-    return f"💰 بودجه باقی‌مانده تو: {b:.1f} میلیون تومان"
+    tokens = get_user_foot_tokens(user_id)
+    return f"💰 بودجه باقی‌مانده تو: {b:.1f} میلیون تومان\n🎟 فوت توکن: {tokens}"
 
 
 async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1124,16 +1754,30 @@ def render_myteam(user_id: int):
     if not team:
         return None
 
-    lines = ["🏆 تیم من:\n"]
+    row = get_user_row(user_id)
+    tactic = TACTICS[get_user_tactic(user_id)]
+    formation = row["formation"] if row["formation"] in FORMATIONS else "انتخاب نشده"
+    lineup_ids = {p["player_id"] for p in get_user_lineup(user_id)}
+    lineup_status = "کامل ✅" if is_lineup_complete(user_id) else "چیده‌نشده/ناقص ⚠️"
+
+    lines = [
+        f"🏆 تیم من: {team_display_name(row)}",
+        f"🧩 آرایش: {formation} ({lineup_status})",
+        f"🎯 تاکتیک: {tactic['emoji']} {tactic['label']}",
+        f"🏟 ورزشگاه: سطح {row['stadium_level'] or 1} | 👥 هواداران: {row['fans'] or 0}\n",
+    ]
     total_points = 0
     total_power = 0
     buttons = []
     for p in team:
+        injured = p["injury_matches_left"] and p["injury_matches_left"] > 0
+        status_icon = "🚑" if injured else ("🟢" if p["player_id"] in lineup_ids else "")
+        injury_note = f" (مصدوم، {p['injury_matches_left']} بازی مونده)" if injured else ""
         lines.append(
-            f"#{p['player_id']} | {POSITION_FA.get(p['position'], p['position'])} | {p['name']} ({p['team']}) "
-            f"- قدرت: {p['power']:.0f} | امتیاز: {p['total_points']:.1f}"
+            f"{status_icon} #{p['player_id']} | {POSITION_FA.get(p['position'], p['position'])} | {p['name']} ({p['team']}) "
+            f"- قدرت: {p['power']:.0f} | امتیاز فصل: {p['season_points']:.1f}{injury_note}"
         )
-        total_points += p["total_points"]
+        total_points += p["season_points"]
         total_power += p["power"]
         buttons.append([
             InlineKeyboardButton(f"⬆️ ارتقا {p['name']}", callback_data=f"upgrade_{p['player_id']}"),
@@ -1141,7 +1785,8 @@ def render_myteam(user_id: int):
         ])
 
     lines.append(f"\n⚡️ مجموع قدرت تیم: {total_power:.0f}")
-    lines.append(f"🏅 مجموع امتیاز تیم: {total_points:.1f}")
+    lines.append(f"🏅 مجموع امتیاز فصل بازیکنان: {total_points:.1f}")
+    lines.append("\n(🟢 = توی ترکیب اصلی، 🚑 = مصدوم)")
     return "\n".join(lines), InlineKeyboardMarkup(buttons)
 
 
@@ -1174,6 +1819,113 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def get_user_foot_tokens(user_id: int) -> int:
+    row = get_user_row(user_id)
+    return row["foot_tokens"] if row and row["foot_tokens"] is not None else 0
+
+
+def set_user_foot_tokens(user_id: int, amount: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET foot_tokens = ? WHERE user_id = ?", (amount, user_id))
+
+
+def ensure_pack_player(name: str, team: str, position: str, price: float, power: float) -> int:
+    """اگه این بازیکن (با همین اسم و تیم) از قبل توی فروشگاه باشه همون آیدی رو برمی‌گردونه،
+    وگرنه تازه می‌سازتش — اینجوری چند تا پک می‌تونن یه بازیکن مشترک (مثلاً نیمار) داشته باشن"""
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("SELECT player_id FROM players WHERE name = ? AND team = ?", (name, team))
+        row = c.fetchone()
+        if row:
+            return row["player_id"]
+    return add_player(name, team, position, price, power)
+
+
+def packs_keyboard() -> InlineKeyboardMarkup:
+    rows = []
+    for key, pack in PACKS.items():
+        rows.append([InlineKeyboardButton(f"{pack['label']} — {pack['cost']} 🎟", callback_data=f"buypack_{key}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def render_packs_text(user_id: int) -> str:
+    tokens = get_user_foot_tokens(user_id)
+    lines = [f"🎟 فوت توکن تو: {tokens}\n"]
+    for pack in PACKS.values():
+        if pack["players"] == "ALL":
+            content = "تمام بازیکنان فروشگاه"
+        else:
+            content = "، ".join(p[0] for p in pack["players"])
+        bonus = pack.get("bonus_budget", 0)
+        bonus_text = f" + {bonus} میلیون تومان" if bonus else ""
+        lines.append(f"{pack['label']} ({pack['cost']} 🎟): {content}{bonus_text}")
+    return "\n".join(lines)
+
+
+def redeem_pack(user_id: int, pack_key: str) -> str:
+    pack = PACKS.get(pack_key)
+    if not pack:
+        return "این پک پیدا نشد."
+
+    tokens = get_user_foot_tokens(user_id)
+    if tokens < pack["cost"]:
+        return f"🎟 فوت توکن کافی نداری! هزینه‌ی این پک: {pack['cost']}، موجودی تو: {tokens}"
+
+    if pack["players"] == "ALL":
+        player_ids = [p["player_id"] for p in get_all_players()]
+    else:
+        player_ids = [
+            ensure_pack_player(name, team, pos, price, power)
+            for name, team, pos, price, power in pack["players"]
+        ]
+
+    added_names = []
+    already_owned = 0
+    team_full_count = 0
+    for pid in player_ids:
+        if is_player_in_team(user_id, pid):
+            already_owned += 1
+            continue
+        if get_user_team_size(user_id) >= MAX_TEAM_SIZE:
+            team_full_count += 1
+            continue
+        add_player_to_team(user_id, pid)
+        p = get_player(pid)
+        if p:
+            added_names.append(p["name"])
+
+    set_user_foot_tokens(user_id, tokens - pack["cost"])
+    bonus = pack.get("bonus_budget", 0)
+    if bonus:
+        update_user_budget(user_id, get_user_budget(user_id) + bonus)
+
+    lines = [f"🎁 {pack['label']} فعال شد!"]
+    if added_names:
+        lines.append("بازیکن‌های جدید: " + "، ".join(added_names))
+    if already_owned:
+        lines.append(f"({already_owned} نفرشون از قبل توی تیمت بودن)")
+    if team_full_count:
+        lines.append(f"⚠️ تیمت پر بود، {team_full_count} بازیکن اضافه نشد.")
+    if bonus:
+        lines.append(f"💰 {bonus} میلیون تومان هم به بودجه‌ت اضافه شد.")
+    lines.append(f"🎟 فوت توکن باقی‌مانده: {tokens - pack['cost']}")
+    return "\n".join(lines)
+
+
+def get_owned_power(user_id: int, player_id: int):
+    """قدرت این بازیکن مخصوص همین تیم (نه قدرت مشترک کاتالوگ)"""
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT COALESCE(up.owned_power, p.power) as power
+            FROM players p
+            JOIN user_players up ON up.player_id = p.player_id
+            WHERE up.user_id = ? AND up.player_id = ?
+        """, (user_id, player_id))
+        row = c.fetchone()
+        return row["power"] if row else None
+
+
 async def upgrade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1185,7 +1937,8 @@ async def upgrade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("این بازیکن توی تیم تو نیست.")
         return
 
-    cost = max(1, round(player["power"])) * UPGRADE_COST_PER_POINT
+    current_power = get_owned_power(user_id, player_id)
+    cost = max(1, round(current_power)) * UPGRADE_COST_PER_POINT
     budget = get_user_budget(user_id)
     if budget < cost:
         await query.message.reply_text(
@@ -1193,14 +1946,17 @@ async def upgrade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    new_power = player["power"] + 1
+    new_power = current_power + 1
     with get_conn() as conn:
-        conn.execute("UPDATE players SET power = ? WHERE player_id = ?", (new_power, player_id))
+        conn.execute(
+            "UPDATE user_players SET owned_power = ? WHERE user_id = ? AND player_id = ?",
+            (new_power, user_id, player_id),
+        )
     update_user_budget(user_id, budget - cost)
 
     await query.message.reply_text(
         f"⬆️ {player['name']} ارتقا پیدا کرد!\n"
-        f"قدرت جدید: {new_power:.0f}\n"
+        f"قدرت جدید (فقط توی تیم خودت): {new_power:.0f}\n"
         f"هزینه پرداخت‌شده: {cost} م.ت\n"
         f"بودجه باقی‌مانده: {budget - cost:.1f} م.ت"
     )
@@ -1307,11 +2063,16 @@ def render_league() -> str:
     rows = get_leaderboard(10)
     if not rows:
         return "هنوز کسی امتیازی نداره."
-    lines = ["🏅 جدول لیگ:\n"]
+    lines = ["🏅 جدول لیگ (بر اساس میانگین امتیاز هر بازی):\n"]
     medals = ["🥇", "🥈", "🥉"]
     for i, r in enumerate(rows):
+        games = (r["wins"] or 0) + (r["draws"] or 0) + (r["losses"] or 0)
+        avg = (r["total_points"] / games) if games > 0 else 0.0
         prefix = medals[i] if i < 3 else f"{i+1}."
-        lines.append(f"{prefix} {team_display_name(r)} - {r['total_points']:.1f} امتیاز")
+        lines.append(
+            f"{prefix} {team_display_name(r)} - میانگین {avg:.2f} "
+            f"({games} بازی، {r['total_points']:.1f} امتیاز کل)"
+        )
     return "\n".join(lines)
 
 
@@ -1550,6 +2311,112 @@ async def friendly_match_callback(update: Update, context: ContextTypes.DEFAULT_
         await query.message.reply_text(text_a)
 
 
+async def buypack_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """خرید یکی از پک‌های بازیکن با فوت توکن"""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    pack_key = query.data[len("buypack_"):]
+    result = redeem_pack(user_id, pack_key)
+    await query.message.reply_text(result)
+
+
+async def lineup_tactic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """چیدن آرایش/ترکیب اصلی، انتخاب تاکتیک، و ارتقای ورزشگاه"""
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = query.from_user.id
+
+    if data == "lineup_formations":
+        row = get_user_row(user_id)
+        current = row["formation"] if row and row["formation"] in FORMATIONS else None
+        text = f"آرایش فعلی: {current or 'انتخاب نشده'}\n\nیکی از این آرایش‌ها رو انتخاب کن:"
+        await query.message.reply_text(text, reply_markup=formation_keyboard())
+        return
+
+    if data.startswith("setformation_"):
+        key = data[len("setformation_"):]
+        if key not in FORMATIONS:
+            return
+        set_formation(user_id, key)
+        req = dict(FORMATIONS[key])
+        req["GK"] = 1
+        need_text = "، ".join(f"{POSITION_FA[pos]}: {n}" for pos, n in req.items())
+        await query.message.reply_text(
+            f"✅ آرایش «{key}» انتخاب شد.\nترکیب لازم: {need_text}\n\n"
+            "حالا بازیکن‌های ترکیب اصلی رو انتخاب کن:",
+            reply_markup=lineup_pick_keyboard(user_id),
+        )
+        return
+
+    if data == "lineup_pick":
+        row = get_user_row(user_id)
+        if not row or row["formation"] not in FORMATIONS:
+            await query.message.reply_text("اول باید یه آرایش انتخاب کنی.", reply_markup=formation_keyboard())
+            return
+        await query.message.reply_text("بازیکن‌های ترکیب اصلی رو انتخاب کن:", reply_markup=lineup_pick_keyboard(user_id))
+        return
+
+    if data.startswith("togglelineup_"):
+        player_id = int(data[len("togglelineup_"):])
+        required = get_lineup_required_counts(user_id)
+        if not required:
+            await query.message.reply_text("اول باید یه آرایش انتخاب کنی.", reply_markup=formation_keyboard())
+            return
+        player = get_player(player_id)
+        counts = get_lineup_position_counts(user_id)
+        lineup_ids = {p["player_id"] for p in get_user_lineup(user_id)}
+        if player_id not in lineup_ids and player and counts.get(player["position"], 0) >= required.get(player["position"], 0):
+            await query.answer(f"جای {POSITION_FA.get(player['position'], player['position'])} توی این آرایش پره!", show_alert=True)
+            return
+        toggle_lineup_player(user_id, player_id)
+        await query.message.reply_text("ترکیب به‌روزرسانی شد:", reply_markup=lineup_pick_keyboard(user_id))
+        return
+
+    if data == "lineup_confirm":
+        if is_lineup_complete(user_id):
+            await query.message.reply_text("✅ ترکیب اصلی‌ت کامل و ثبت شد! از این به بعد توی بازی‌ها همین ۱۱ نفر حساب می‌شن.")
+        else:
+            required = get_lineup_required_counts(user_id) or {}
+            counts = get_lineup_position_counts(user_id)
+            missing = [f"{POSITION_FA[pos]}: {counts.get(pos,0)}/{need}" for pos, need in required.items() if counts.get(pos, 0) != need]
+            await query.message.reply_text(
+                "⚠️ ترکیبت هنوز کامل نیست:\n" + "\n".join(missing),
+                reply_markup=lineup_pick_keyboard(user_id),
+            )
+        return
+
+    if data == "tactic_pick":
+        current = TACTICS[get_user_tactic(user_id)]
+        await query.message.reply_text(
+            f"تاکتیک فعلی: {current['emoji']} {current['label']}\n\n"
+            "⚖️ استاندارد: نه ضعف نه قوت خاصی، متعادل\n"
+            "🔄 تیکی‌تاکا: هم حمله هم دفاع بهتر می‌شه (نیاز به تیم قوی)\n"
+            "🔥 پرس سنگین: حمله خیلی قوی، ولی دفاع ضعیف می‌شه\n"
+            "🚌 اتوبوسی: دفاع خیلی قوی، ولی حمله خیلی ضعیف می‌شه\n"
+            "⚡ ضدحمله: دفاع خوب، حمله معمولی ولی کارآمد\n"
+            "↔️ بازی از جناحین: حمله قوی، دفاع کمی ضعیف‌تر\n\n"
+            "کدومو می‌خوای؟",
+            reply_markup=tactic_keyboard(),
+        )
+        return
+
+    if data.startswith("settactic_"):
+        key = data[len("settactic_"):]
+        if key not in TACTICS:
+            return
+        set_user_tactic(user_id, key)
+        t = TACTICS[key]
+        await query.message.reply_text(f"✅ تاکتیک تیمت شد: {t['emoji']} {t['label']}")
+        return
+
+    if data == "stadium_upgrade":
+        result = upgrade_stadium(user_id)
+        await query.message.reply_text(result)
+        return
+
+
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1578,6 +2445,18 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "اسم تیمت رو بفرست (مثلاً «شاهین‌های سرخ»). این اسم توی نتایج بازی‌ها نشون داده می‌شه:"
         )
 
+    elif action == "menu_statement":
+        today = get_today_str()
+        if get_last_action_date(user_id, "last_statement_date") == today:
+            await query.message.reply_text("⏳ امروز قبلاً یه بیانیه دادی! فردا دوباره بیا.")
+        elif not CHANNEL_ID:
+            await query.message.reply_text("⚠️ آیدی کانال هنوز تنظیم نشده، برای همین بیانیه‌ها جایی پست نمی‌شن.")
+        else:
+            context.user_data["awaiting_statement"] = True
+            await query.message.reply_text(
+                "متن بیانیه‌ت رو بفرست؛ با اسم تیمت توی کانال پست می‌شه (هر تیم روزی فقط یه بیانیه):"
+            )
+
     elif action == "menu_sponsor":
         row = get_user_row(user_id)
         current = row["sponsor"] if row and "sponsor" in row.keys() else None
@@ -1589,6 +2468,44 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{current_text}یه اسپانسر برای باشگاهت انتخاب کن. اسپانسر هر بار که تیمت توی لیگ بازی کنه، "
             f"{SPONSOR_MATCH_BONUS} میلیون تومان به حسابت واریز می‌کنه (بازی‌های دوستانه شامل این پاداش نمی‌شن):",
             reply_markup=sponsor_keyboard(),
+        )
+
+    elif action == "menu_packs":
+        await query.message.reply_text(render_packs_text(user_id), reply_markup=packs_keyboard())
+
+    elif action == "menu_lineup_tactics":
+        row = get_user_row(user_id)
+        formation = row["formation"] if row and row["formation"] in FORMATIONS else None
+        tactic_key = get_user_tactic(user_id)
+        tactic = TACTICS[tactic_key]
+        lineup_status = "کامل ✅" if is_lineup_complete(user_id) else "ناقص یا چیده‌نشده ⚠️"
+        text = (
+            f"آرایش فعلی: {formation or 'انتخاب نشده'}\n"
+            f"ترکیب اصلی: {lineup_status}\n"
+            f"تاکتیک فعلی: {tactic['emoji']} {tactic['label']}\n\n"
+            "چیکار می‌خوای بکنی؟"
+        )
+        await query.message.reply_text(text, reply_markup=lineup_tactics_menu_keyboard())
+
+    elif action == "menu_stadium":
+        row = get_user_row(user_id)
+        level = row["stadium_level"] or 1
+        fans = row["fans"] or 0
+        cost = get_stadium_upgrade_cost(level)
+        upgrade_text = (
+            f"هزینه‌ی ارتقا به سطح {level+1}: {cost} م.ت" if level < STADIUM_MAX_LEVEL
+            else "ورزشگاهت به حداکثر سطح رسیده! 🏆"
+        )
+        kb_rows = []
+        if level < STADIUM_MAX_LEVEL:
+            kb_rows.append([InlineKeyboardButton("⬆️ ارتقای ورزشگاه", callback_data="stadium_upgrade")])
+        await query.message.reply_text(
+            f"🏟 ورزشگاه «{team_display_name(row)}»\n\n"
+            f"سطح فعلی: {level} از {STADIUM_MAX_LEVEL}\n"
+            f"👥 هواداران: {fans}\n"
+            f"{upgrade_text}\n\n"
+            "هرچی سطح ورزشگاه و تعداد هوادارات بیشتر باشه، بعد از هر بازی رسمی درآمد بلیت بیشتری می‌گیری.",
+            reply_markup=InlineKeyboardMarkup(kb_rows) if kb_rows else None,
         )
 
     elif action == "menu_friendly":
@@ -1657,29 +2574,30 @@ async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if action == "admin_matchday_auto":
-        all_eligible = get_all_matchday_eligible_users()
-        eligible = all_eligible[:MAX_MATCHDAY_TEAMS]
+        eligible = get_all_matchday_eligible_users()
         n = len(eligible)
-        total_matches = n * (n - 1) // 2 if n >= 2 else 0
+        max_possible = n * (n - 1) // 2 if n >= 2 else 0
+        new_matches = 0
+        for i in range(n):
+            for j in range(i + 1, n):
+                if not has_played_fixture(eligible[i], eligible[j]):
+                    new_matches += 1
         confirm_kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ بله، بازی‌ها رو شروع کن", callback_data="admin_matchday_confirm")],
             [InlineKeyboardButton("❌ انصراف", callback_data="admin_back")],
         ])
-        cap_note = ""
-        if len(all_eligible) > MAX_MATCHDAY_TEAMS:
-            cap_note = (
-                f"\n\n⚠️ {len(all_eligible)} تیم آماده بودن، ولی چون سقف لیگ {MAX_MATCHDAY_TEAMS} تیمه، "
-                f"فقط {MAX_MATCHDAY_TEAMS} تیم برتر (بر اساس امتیاز فعلی) بازی می‌کنن."
-            )
+        already_played_note = ""
+        if max_possible - new_matches > 0:
+            already_played_note = f"\n({max_possible - new_matches} جفت رفت‌وبرگشتشون قبلاً کامل شده و دوباره تکرار نمی‌شن.)"
         team_list_text = ""
         if eligible:
             names = [team_display_name(get_user_row(uid)) for uid in eligible]
             team_list_text = "\n\nتیم‌های شرکت‌کننده:\n" + "\n".join(f"• {nm}" for nm in names)
         await query.message.reply_text(
             f"⚠️ الان {n} تیم آماده‌ی بازی هستن (ترکیبشون کامله).\n"
-            f"با تایید، هر تیم دقیقاً یک‌بار با تک‌تک بقیه‌ی تیم‌ها بازی می‌کنه (مجموعاً {total_matches} بازی)؛ "
+            f"با تایید، {new_matches} بازی جدید (رفت یا برگشت، هرکدوم هنوز کامل نشده) برگزار می‌شه؛ "
             "نتیجه‌ها هم توی کانال اعلام می‌شه."
-            f"{cap_note}"
+            f"{already_played_note}"
             f"{team_list_text}\n\n"
             "مطمئنی؟",
             reply_markup=confirm_kb,
@@ -1689,6 +2607,34 @@ async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     if action == "admin_matchday_confirm":
         summary = await run_matchday(context.bot)
         await query.message.reply_text(summary)
+        return
+
+    if action == "admin_start_auto_season":
+        existing = context.job_queue.get_jobs_by_name("auto_matchday_job") if context.job_queue else []
+        if existing:
+            await query.message.reply_text("🚀 فصل خودکار از قبل در حال اجراست (هر ۵ ساعت یه دور بازی می‌شه).")
+        elif not context.job_queue:
+            await query.message.reply_text(
+                "⚠️ زمان‌بند (JobQueue) روی این سرور فعال نیست. باید کتابخونه‌ی "
+                "python-telegram-bot[job-queue] نصب باشه."
+            )
+        else:
+            context.job_queue.run_repeating(
+                auto_matchday_job, interval=5 * 3600, first=10, name="auto_matchday_job"
+            )
+            await query.message.reply_text(
+                "🚀 فصل خودکار شروع شد!\n"
+                "هر ۵ ساعت یه دور بازی خودش برگزار می‌شه (هر جفت تیم رفت و برگشت بازی می‌کنه)، "
+                "و وقتی همه‌ی تیم‌های آماده رفت‌وبرگشتشون تموم بشه، خودش متوقف می‌شه و "
+                "جدول نهایی و قهرمان فصل رو توی کانال اعلام می‌کنه."
+            )
+        return
+
+    if action == "admin_stop_auto_season":
+        existing = context.job_queue.get_jobs_by_name("auto_matchday_job") if context.job_queue else []
+        for job in existing:
+            job.schedule_removal()
+        await query.message.reply_text("⏹ فصل خودکار متوقف شد." if existing else "فصل خودکاری در حال اجرا نبود.")
         return
 
     if action == "admin_matchday_manual":
@@ -1780,6 +2726,7 @@ async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     prompts = {
         "admin_give_budget": "آیدی عددی کاربر و مقدار رو با یه فاصله بفرست.\nمثال: 123456789 50",
+        "admin_give_tokens": "آیدی عددی کاربر و مقدار فوت توکن رو با یه فاصله بفرست.\nمثال: 123456789 50",
         "admin_set_news": "متن خبر جدید رو بفرست:",
         "admin_add_player": (
             "اطلاعات بازیکن رو به این شکل بفرست:\n"
@@ -1815,6 +2762,31 @@ async def admin_text_input_handler(update: Update, context: ContextTypes.DEFAULT
         )
         return
 
+    # ---- بیانیه (برای همه کاربرا، نه فقط ادمین) ----
+    if context.user_data.get("awaiting_statement"):
+        context.user_data["awaiting_statement"] = False
+        statement_text = update.message.text.strip()[:1000]
+        if not statement_text:
+            await update.message.reply_text("متن بیانیه نمی‌تونه خالی باشه.")
+            return
+        today = get_today_str()
+        if get_last_action_date(user_id, "last_statement_date") == today:
+            await update.message.reply_text("⏳ امروز قبلاً یه بیانیه دادی! فردا دوباره بیا.")
+            return
+        row = get_user_row(user_id)
+        channel_text = f"📢 بیانیه رسمی از طرف {team_display_name(row)}:\n\n{statement_text}"
+        if CHANNEL_ID:
+            try:
+                await context.bot.send_message(chat_id=CHANNEL_ID, text=channel_text)
+                set_last_action_date(user_id, "last_statement_date", today)
+                await update.message.reply_text("✅ بیانیه‌ت توی کانال پست شد.")
+            except Exception as e:
+                logger.warning(f"ارسال بیانیه به کانال ناموفق بود: {e}")
+                await update.message.reply_text("⚠️ ارسال بیانیه به کانال ناموفق بود؛ مطمئن شو ربات ادمین کانال باشه.")
+        else:
+            await update.message.reply_text("⚠️ آیدی کانال تنظیم نشده، برای همین بیانیه‌ای پست نشد.")
+        return
+
     awaiting = context.user_data.get("awaiting")
     if not awaiting:
         return
@@ -1845,6 +2817,29 @@ async def admin_text_input_handler(update: Update, context: ContextTypes.DEFAULT
         update_user_budget(target_id, current + amount)
         await update.message.reply_text(
             f"✅ به کاربر {target_id} مقدار {amount} م.ت اضافه شد.\nبودجه جدید: {current + amount:.1f} م.ت"
+        )
+
+    elif awaiting == "admin_give_tokens":
+        parts = text.split()
+        if len(parts) != 2:
+            await update.message.reply_text("فرمت درست نبود. آیدی و مقدار رو با فاصله بفرست: مثلاً 123456789 50")
+            return
+        try:
+            target_id = int(parts[0])
+            amount = int(parts[1])
+        except ValueError:
+            await update.message.reply_text("آیدی و مقدار باید عدد باشن.")
+            return
+        with get_conn() as conn:
+            c = conn.cursor()
+            c.execute("SELECT 1 FROM users WHERE user_id = ?", (target_id,))
+            if c.fetchone() is None:
+                await update.message.reply_text("این آیدی هنوز ربات رو استارت نکرده.")
+                return
+        current_tokens = get_user_foot_tokens(target_id)
+        set_user_foot_tokens(target_id, current_tokens + amount)
+        await update.message.reply_text(
+            f"✅ به کاربر {target_id} مقدار {amount} 🎟 فوت توکن اضافه شد.\nموجودی جدید: {current_tokens + amount}"
         )
 
     elif awaiting == "admin_set_news":
@@ -2276,6 +3271,11 @@ def main():
     app.add_handler(CallbackQueryHandler(edit_team_callback, pattern=r"^editteam_"))
     app.add_handler(CallbackQueryHandler(manual_pairing_callback, pattern=r"^(manualpick_|manual_finish|manual_cancel)"))
     app.add_handler(CallbackQueryHandler(friendly_match_callback, pattern=r"^(friendlypick_|friendly_cancel)"))
+    app.add_handler(CallbackQueryHandler(buypack_callback, pattern=r"^buypack_"))
+    app.add_handler(CallbackQueryHandler(
+        lineup_tactic_callback,
+        pattern=r"^(lineup_|setformation_|togglelineup_|tactic_pick|settactic_|stadium_upgrade)"
+    ))
     app.add_handler(CallbackQueryHandler(admin_menu_callback, pattern=r"^admin_"))
 
     # دستورات ادمین (متنی - برای کسی که ترجیح میده تایپ کنه)
