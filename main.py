@@ -1,167 +1,85 @@
 # -*- coding: utf-8 -*-
-"""
-ربات فانتزی فوتبال بله - نسخه ۲ (تک‌فایلی)
-فقط همین یک فایل رو اجرا کن.
-"""
+"""ربات مدیریت جام جهانی ۲۰۲۶ بله - نسخه تک‌فایلی."""
 import sqlite3
 import logging
 import random
 import math
 import datetime
-import os
 from contextlib import contextmanager
 
+# ثبت لاگر برای اجرای Pydroid
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger("WorldCupBot2026")
+
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    TypeHandler,
-    ApplicationHandlerStop,
-    filters,
-    ContextTypes,
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler,
+    TypeHandler, filters, ContextTypes,
 )
 
-# ================== تنظیمات (اینجا رو خودت عوض کن) ==================
+# ===== داده‌های داخلی؛ فایل تک‌فایلی UTF-8 =====
+# -*- coding: utf-8 -*-
+"""داده‌ها و تنظیمات جام جهانی ۲۰۲۶."""
 
-BOT_TOKEN = "323724086:4HV_kcxlSeEqInyyu9nTnfapRh-L3kuIq5Q"          # <-- توکن ربات بله‌ت
+# ========================= تنظیمات =========================
 BALE_API_BASE_URL = "https://tapi.bale.ai/bot"
+ADMIN_IDS = [1845840976,12627252]
+CHANNEL_ID = "@ddddddddddn"
+DATABASE_PATH = "worldcup_2026.db"
 
-# آیدی عددی کاربر بله‌ت که قراره ادمین باشه (بدون این عدد، دستورات ادمین کار نمی‌کنن)
-# اگه نمی‌دونی آیدیت چیه: ربات رو /start بزن، بعد موقتاً پایین همین فایل توضیح دادم چطور پیداش کنی
-ADMIN_IDS = [1845840976,12627252]   # <-- آیدی عددی خودت رو اینجا بذار (می‌تونی چند نفر هم بذاری)
-
-# آیدی عددی کانالی که نتایج بازی‌ها توش پست بشه (باید ربات ادمین اون کانال باشه)
-# اگه نمی‌خوای، همینو خالی (None) بذار؛ نتایج فقط توی خود پنل ادمین نشون داده می‌شه
-CHANNEL_ID = "@FootballXchannel"   # <-- کانال نتایج بازی‌ها
-
-INITIAL_BUDGET = 130      # بودجه اولیه هر کاربر
-MIN_TEAM_SIZE = 11
-MAX_TEAM_SIZE = 22
-DATABASE_PATH = "fantasy.db"
-
-# هزینه ارتقای هر بازیکن = قدرت فعلیش ضربدر این عدد (هر بار که ارتقا بگیره قدرتش +۱ می‌شه)
-UPGRADE_COST_PER_POINT = 3
-
-# امتیاز بازی بین تیم‌ها
+WORLD_CUP_NAME = "جام جهانی ۲۰۲۶"
 WIN_POINTS = 3
 DRAW_POINTS = 1
+START_TRAINING_BUDGET = 130.0
+TRAINING_COST_PER_POINT = 10.0
+PLAYER_TRAINING_COST = 5.0
 
-# مبلغی که اسپانسر به‌ازای هر بازی به حساب باشگاه واریز می‌کنه (به میلیون تومان)
-SPONSOR_MATCH_BONUS = 5
-# حداکثر نوسان شانسی نسبت به قدرت پایه تیم (۰.۳ یعنی تا ۳۰٪ نوسان تصادفی)
-BATTLE_RANDOM_FACTOR = 0.3
 
-# آرایش‌های قابل انتخاب: تعداد مدافع/هافبک/مهاجم (دروازه‌بان همیشه ۱ نفره و جدا حساب می‌شه)
-FORMATIONS = {
-    "4-4-2": {"DF": 4, "MF": 4, "FW": 2},
-    "4-3-3": {"DF": 4, "MF": 3, "FW": 3},
-    "4-2-3-1": {"DF": 4, "MF": 5, "FW": 1},
-    "4-1-2-1-2": {"DF": 4, "MF": 4, "FW": 2},
-    "4-3-2-1": {"DF": 4, "MF": 5, "FW": 1},
-    "4-1-4-1": {"DF": 4, "MF": 5, "FW": 1},
-    "4-2-2-2": {"DF": 4, "MF": 4, "FW": 2},
-    "4-5-1": {"DF": 4, "MF": 5, "FW": 1},
-    "3-5-2": {"DF": 3, "MF": 5, "FW": 2},
-    "3-4-3": {"DF": 3, "MF": 4, "FW": 3},
-    "3-4-1-2": {"DF": 3, "MF": 5, "FW": 2},
-    "5-3-2": {"DF": 5, "MF": 3, "FW": 2},
-    "5-2-1-2": {"DF": 5, "MF": 3, "FW": 2},
-    "5-4-1": {"DF": 5, "MF": 4, "FW": 1},
+# ========================= تیم‌های رسمی =========================
+WORLD_CUP_TEAMS = [
+    ("MEX", "مکزیک", "A", 78), ("RSA", "آفریقای جنوبی", "A", 68), ("KOR", "کره جنوبی", "A", 76), ("CZE", "چک", "A", 75),
+    ("CAN", "کانادا", "B", 74), ("BIH", "بوسنی و هرزگوین", "B", 72), ("QAT", "قطر", "B", 70), ("SUI", "سوئیس", "B", 82),
+    ("BRA", "برزیل", "C", 91), ("MAR", "مراکش", "C", 84), ("HAI", "هائیتی", "C", 67), ("SCO", "اسکاتلند", "C", 76),
+    ("USA", "آمریکا", "D", 80), ("PAR", "پاراگوئه", "D", 76), ("AUS", "استرالیا", "D", 75), ("TUR", "ترکیه", "D", 80),
+    ("GER", "آلمان", "E", 88), ("ECU", "اکوادور", "E", 78), ("CIV", "ساحل عاج", "E", 77), ("CUW", "کوراسائو", "E", 65),
+    ("NED", "هلند", "F", 86), ("JPN", "ژاپن", "F", 79), ("SWE", "سوئد", "F", 79), ("TUN", "تونس", "F", 71),
+    ("BEL", "بلژیک", "G", 84), ("EGY", "مصر", "G", 78), ("IRN", "ایران", "G", 73), ("NZL", "نیوزیلند", "G", 65),
+    ("ESP", "اسپانیا", "H", 92), ("CPV", "کابو ورد", "H", 70), ("KSA", "عربستان", "H", 71), ("URU", "اروگوئه", "H", 85),
+    ("FRA", "فرانسه", "I", 91), ("SEN", "سنگال", "I", 82), ("IRQ", "عراق", "I", 68), ("NOR", "نروژ", "I", 84),
+    ("ARG", "آرژانتین", "J", 92), ("ALG", "الجزایر", "J", 76), ("AUT", "اتریش", "J", 82), ("JOR", "اردن", "J", 67),
+    ("POR", "پرتغال", "K", 90), ("COD", "کنگو دموکراتیک", "K", 72), ("UZB", "ازبکستان", "K", 70), ("COL", "کلمبیا", "K", 84),
+    ("ENG", "انگلیس", "L", 89), ("CRO", "کرواسی", "L", 81), ("GHA", "غنا", "L", 73), ("PAN", "پاناما", "L", 69),
+]
+
+# تیم‌های ویژه برای شروع؛ بقیه هم اسکوا‌د ۱۱ نفره تولیدی دارند.
+SQUADS = {
+    "FRA": ["مایک مانیان", "ژول کُنده", "ویلیام سالیبا", "ایبراهیما کوناته", "تئو هرناندز", "ادواردو کاماوینگا", "اورلین شوامنی", "آدرین رابیو", "عثمان دمبله", "کیلیان امباپه", "مایکل اولیسه"],
+    "BRA": ["آلیسون", "مارکینیوش", "میلیتائو", "گابریل", "وندرسون", "برونو گیمارش", "ژائو گومز", "پاکتا", "رافینیا", "وینیسیوس جونیور", "رودریگو"],
+    "ARG": ["امیلیانو مارتینز", "رومرو", "اوپامکانو", "مولینا", "تاگلیافیکو", "انزو فرناندز", "مک‌آلیستر", "دی‌ماریا", "آلوارز", "مسی", "لائوتارو مارتینز"],
+    "POR": ["دیوگو کاستا", "پپه", "روبن دیاز", "ژوائو کانسلو", "نونو مندز", "ویتینیا", "برونو فرناندز", "برناردو سیلوا", "رافائل لیائو", "کریستیانو رونالدو", "ژوائو فلیکس"],
+    "ESP": ["اونای سیمون", "دنی کارواخال", "روبن لو نورمان", "آیمریک لاپورته", "آلیخاندرو گریمادو", "رودری", "پدری", "فابیان رویز", "لامین یامال", "نیکو ویلیامز", "موراتا"],
+    "ENG": ["جردن پیکفورد", "کایل واکر", "جان استونز", "مارک گوئهی", "لوک شاو", "دکلان رایس", "جود بلینگهام", "فیل فودن", "بوکایو ساکا", "هری کین", "کول پالمر"],
+    "GER": ["مانوئل نویر", "یوشوا کیمیش", "آنتونیو رودیگر", "نیکلاس زوله", "دیوید رائوم", "لئون گورتسکا", "فلوریان ویرتس", "ایلکای گوندوغان", "جمال موسیالا", "کای هاورتز", "نیکلاس فولکروگ"],
+    "NED": ["بارت فربروخن", "دومفریز", "فن دایک", "دی فری", "آکه", "فرنکی دی‌یونگ", "تیجانی ریندرز", "ژاوی سیمونز", "کودی خاکپو", "ممفیس دپای", "مالک تیلمن"],
+    "BEL": ["کون کاستیلز", "تیموتی کاستانی", "فائِس", "آرتور تئات", "تئو لئونی", "کوین دی‌بروینه", "یوری تیلمانس", "لئاندرو تروسار", "جرمی دوکو", "روملو لوکاکو", "لوئیس اوپندا"],
+    "JPN": ["زیون سوزوکی", "میتوما", "ایتاکورا", "تومیاسو", "ایتو", "کوبو", "موریتا", "کامادا", "مائدا", "اوئدا", "میتوما"],
+    "MAR": ["یاسین بونو", "اشرف حکیمی", "ناصیف آگِرد", "رومان سایس", "مزراوی", "عزالدین اوناحی", "سفیان امرابط", "حکیم زیاش", "ابراهیم دیاز", "یوسف النصیری", "بلال الخنوس"],
+    "IRN": ["علیرضا بیرانوند", "صادق محرمی", "شجاع خلیل‌زاده", "محمدحسین کنعانی‌زادگان", "میلاد محمدی", "احمد نوراللهی", "سعید عزت‌اللهی", "مهدی قایدی", "سامان قدوس", "مهدی طارمی", "سردار آزمون"],
 }
 
-# تاکتیک‌ها: روی قدرت حمله و دفاع تیم تاثیر می‌ذارن
-TACTICS = {
-    "standard": {"label": "استاندارد", "emoji": "⚖️", "atk": 1.00, "def": 1.00},
-    "tiki_taka": {"label": "تیکی‌تاکا", "emoji": "🔄", "atk": 1.15, "def": 1.10},
-    "press": {"label": "پرس سنگین", "emoji": "🔥", "atk": 1.30, "def": 0.75},
-    "park_bus": {"label": "اتوبوسی", "emoji": "🚌", "atk": 0.65, "def": 1.40},
-    "counter": {"label": "ضدحمله", "emoji": "⚡", "atk": 1.00, "def": 1.20},
-    "wings": {"label": "بازی از جناحین", "emoji": "↔️", "atk": 1.20, "def": 0.95},
-}
+POSITIONS = ["GK", "DF", "DF", "DF", "DF", "MF", "MF", "MF", "FW", "FW", "FW"]
+POSITION_FA = {"GK": "دروازه‌بان", "DF": "مدافع", "MF": "هافبک", "FW": "مهاجم"}
 
-# هزینه‌ی ارتقای هر سطح ورزشگاه (به میلیون تومان) و افزایش ظرفیت/تاثیرش
-STADIUM_UPGRADE_BASE_COST = 15
-STADIUM_MAX_LEVEL = 10
 
-# شانس مصدومیت هر بازیکن ترکیب اصلی بعد از یه بازی رسمی، و طول مدت مصدومیت (تعداد بازی)
-INJURY_CHANCE = 0.06
-INJURY_MIN_MATCHES = 1
-INJURY_MAX_MATCHES = 3
 
-# قیمت بازیکنایی که آکادمی تولید می‌کنه (بین این دو عدد رندوم انتخاب می‌شه)
-ACADEMY_MIN_PRICE = 2
-ACADEMY_MAX_PRICE = 5
-
-# اسامی نمونه برای بازیکنای آکادمی (رندوم ترکیب می‌شن)
-ACADEMY_FIRST_NAMES = [
-    "امیر", "علی", "محمد", "حسین", "رضا", "مهدی", "سینا", "آرش", "پارسا", "دانیال",
-    "کیان", "نیما", "شایان", "بردیا", "یاسین",
-]
-ACADEMY_LAST_NAMES = [
-    "احمدی", "محمدی", "حسینی", "رضایی", "کریمی", "نوری", "صادقی", "قاسمی", "رحیمی", "جعفری",
-]
-ACADEMY_POSITIONS = ["GK", "DF", "MF", "FW"]
-
-# لیست بازیکنان اولیه بازی
-SAMPLE_PLAYERS = [
-    # ---- دروازه‌بان‌ها ----
-    ("اِدرسون", "منچسترسیتی", "GK", 10),
-    ("آلیسون", "لیورپول", "GK", 10),
-    ("تیبو کورتوا", "رئال مادرید", "GK", 11),
-    ("یان اوبلاک", "اتلتیکومادرید", "GK", 9),
-    ("جیانلوئیجی دوناروما", "پاری‌سن‌ژرمن", "GK", 9),
-    ("مانوئل نویر", "بایرن مونیخ", "GK", 8),
-
-    # ---- مدافعان ----
-    ("روبن دیاش", "منچسترسیتی", "DF", 10),
-    ("ویرجیل ون‌دایک", "لیورپول", "DF", 11),
-    ("آنتونیو رودیگر", "رئال مادرید", "DF", 9),
-    ("داوینسون سانچس", "توتنهام", "DF", 6),
-    ("تئو هرناندز", "میلان", "DF", 9),
-    ("آشرف حکیمی", "پاری‌سن‌ژرمن", "DF", 9),
-    ("کیران تریپیه", "نیوکاسل", "DF", 7),
-    ("آلفونسو دیویس", "بایرن مونیخ", "DF", 8),
-    ("ویلیام سالیبا", "آرسنال", "DF", 8),
-    ("جان استونز", "منچسترسیتی", "DF", 7),
-    ("رابن گوسنز", "اینتر", "DF", 6),
-    ("بن وایت", "آرسنال", "DF", 6),
-
-    # ---- هافبک‌ها ----
-    ("کوین دی‌بروین", "منچسترسیتی", "MF", 13),
-    ("رودری", "منچسترسیتی", "MF", 12),
-    ("جود بلینگهام", "رئال مادرید", "MF", 15),
-    ("فردریکو والورده", "رئال مادرید", "MF", 11),
-    ("مارتین اودگارد", "آرسنال", "MF", 11),
-    ("بروتو فرناندز", "منچستریونایتد", "MF", 10),
-    ("دکلان رایس", "آرسنال", "MF", 9),
-    ("جمال موسیالا", "بایرن مونیخ", "MF", 11),
-    ("فدریکو کیه‌سا", "لیورپول", "MF", 8),
-    ("پدری", "بارسلونا", "MF", 10),
-    ("گاوی", "بارسلونا", "MF", 9),
-    ("آدرین رابیو", "میلان", "MF", 7),
-    ("نیکولو باره‌لا", "اینتر", "MF", 9),
-
-    # ---- مهاجمان ----
-    ("ارلینگ هالند", "منچسترسیتی", "FW", 18),
-    ("کیلیان امباپه", "رئال مادرید", "FW", 17),
-    ("محمد صلاح", "لیورپول", "FW", 15),
-    ("هری کین", "بایرن مونیخ", "FW", 14),
-    ("وینیسیوس جونیور", "رئال مادرید", "FW", 15),
-    ("رحیم استرلینگ", "چلسی", "FW", 9),
-    ("رافائل لئائو", "میلان", "FW", 11),
-    ("اوسمانه دمبله", "پاری‌سن‌ژرمن", "FW", 12),
-    ("ویکتور اوسیمن", "ناپولی", "FW", 12),
-    ("لائوتارو مارتینز", "اینتر", "FW", 12),
-    ("بوکایو ساکا", "آرسنال", "FW", 12),
-    ("دارویین نونیز", "لیورپول", "FW", 9),
-]
-
-# ================== دیتابیس ==================
-
+# تنظیمات حساس/محلی
+BOT_TOKEN = "460332597:5RtOn61a63aJyCQB5Ds-qeuo-oYEBGMQIRM"
+CHANNEL_ID = "@ddddddddddn"
+# ========================= دیتابیس =========================
 @contextmanager
-def get_conn():
+def db():
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -173,3127 +91,1444 @@ def get_conn():
 
 
 def init_db():
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
+    with db() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS users(
             user_id INTEGER PRIMARY KEY,
             username TEXT,
-            budget REAL DEFAULT %f,
-            total_points REAL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """ % INITIAL_BUDGET)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS players (
+            training_budget REAL DEFAULT 130,
+            national_team_code TEXT UNIQUE,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS national_teams(
+            team_code TEXT PRIMARY KEY,
+            team_name TEXT NOT NULL,
+            group_name TEXT NOT NULL,
+            base_power REAL NOT NULL,
+            training_power REAL DEFAULT 0,
+            assigned_user_id INTEGER UNIQUE,
+            is_vip INTEGER DEFAULT 0,
+            FOREIGN KEY(assigned_user_id) REFERENCES users(user_id)
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS world_cup_players(
             player_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            team TEXT,
-            position TEXT CHECK(position IN ('GK','DF','MF','FW')),
-            price REAL NOT NULL,
-            power REAL DEFAULT 5,
-            week_points REAL DEFAULT 0,
-            total_points REAL DEFAULT 0
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS user_players (
-            user_id INTEGER,
-            player_id INTEGER,
-            PRIMARY KEY (user_id, player_id),
-            FOREIGN KEY(user_id) REFERENCES users(user_id),
-            FOREIGN KEY(player_id) REFERENCES players(player_id)
-        )
-        """)
-
-        # جدول اخبار: فقط یک ردیف نگه می‌داریم (آخرین خبر)
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            content TEXT NOT NULL DEFAULT ''
-        )
-        """)
-        c.execute("INSERT OR IGNORE INTO news (id, content) VALUES (1, 'فعلاً خبری ثبت نشده.')")
-
-        # جدول تنظیمات کلی ربات (مثل روشن/خاموش بودن)
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-        """)
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('bot_enabled', '1')")
-
-    # اگه دیتابیس از قبل ساخته شده بود (نسخه قبلی ربات)، ستون‌های جدید رو اضافه کن
-    with get_conn() as conn:
-        def _has_column(table, column):
-            cur = conn.execute(f"PRAGMA table_info({table})")
-            return any(row["name"] == column for row in cur.fetchall())
-
-        if not _has_column("players", "power"):
-            conn.execute("ALTER TABLE players ADD COLUMN power REAL DEFAULT 5")
-            conn.execute("UPDATE players SET power = price WHERE power IS NULL")
-        if not _has_column("users", "wins"):
-            conn.execute("ALTER TABLE users ADD COLUMN wins INTEGER DEFAULT 0")
-        if not _has_column("users", "draws"):
-            conn.execute("ALTER TABLE users ADD COLUMN draws INTEGER DEFAULT 0")
-        if not _has_column("users", "losses"):
-            conn.execute("ALTER TABLE users ADD COLUMN losses INTEGER DEFAULT 0")
-        if not _has_column("users", "last_battle_date"):
-            conn.execute("ALTER TABLE users ADD COLUMN last_battle_date TEXT")
-        if not _has_column("users", "last_academy_date"):
-            conn.execute("ALTER TABLE users ADD COLUMN last_academy_date TEXT")
-        if not _has_column("users", "last_statement_date"):
-            conn.execute("ALTER TABLE users ADD COLUMN last_statement_date TEXT")
-        if not _has_column("users", "team_name"):
-            conn.execute("ALTER TABLE users ADD COLUMN team_name TEXT")
-        if not _has_column("users", "kit_color1"):
-            conn.execute("ALTER TABLE users ADD COLUMN kit_color1 TEXT")
-        if not _has_column("users", "kit_color2"):
-            conn.execute("ALTER TABLE users ADD COLUMN kit_color2 TEXT")
-        if not _has_column("users", "sponsor"):
-            conn.execute("ALTER TABLE users ADD COLUMN sponsor TEXT")
-        if not _has_column("users", "formation"):
-            conn.execute("ALTER TABLE users ADD COLUMN formation TEXT")
-        if not _has_column("users", "tactic"):
-            conn.execute("ALTER TABLE users ADD COLUMN tactic TEXT DEFAULT 'standard'")
-        if not _has_column("users", "stadium_level"):
-            conn.execute("ALTER TABLE users ADD COLUMN stadium_level INTEGER DEFAULT 1")
-        if not _has_column("users", "fans"):
-            conn.execute("ALTER TABLE users ADD COLUMN fans INTEGER DEFAULT 1000")
-        if not _has_column("users", "foot_tokens"):
-            conn.execute("ALTER TABLE users ADD COLUMN foot_tokens INTEGER DEFAULT 0")
-        if not _has_column("user_players", "injury_matches_left"):
-            conn.execute("ALTER TABLE user_players ADD COLUMN injury_matches_left INTEGER DEFAULT 0")
-        if not _has_column("user_players", "season_points"):
-            conn.execute("ALTER TABLE user_players ADD COLUMN season_points REAL DEFAULT 0")
-        if not _has_column("user_players", "owned_power"):
-            conn.execute("ALTER TABLE user_players ADD COLUMN owned_power REAL")
-            # هر بازیکنی که قبلاً به یه تیم اضافه شده، قدرتش رو از کاتالوگ فعلی اسنپ‌شات می‌گیریم
-            conn.execute("""
-                UPDATE user_players
-                SET owned_power = (SELECT power FROM players WHERE players.player_id = user_players.player_id)
-                WHERE owned_power IS NULL
-            """)
-
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS user_lineup (
-            user_id INTEGER,
-            player_id INTEGER,
-            PRIMARY KEY (user_id, player_id)
-        )
-        """)
-
-        # کدوم تیم‌ها این فصل قبلاً با هم بازی کردن (برای اینکه لیگ خودکار دوباره تکرارشون نکنه
-        # و تیم تازه‌وارد فقط با کسایی که هنوز باهاشون بازی نکرده جفت بشه)
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS fixtures (
-            user_a INTEGER,
-            user_b INTEGER,
-            PRIMARY KEY (user_a, user_b)
-        )
-        """)
-        if not _has_column("fixtures", "legs_played"):
-            # هرچی از قبل توی جدول بود یعنی یه بار (رفت) بازی شده
-            conn.execute("ALTER TABLE fixtures ADD COLUMN legs_played INTEGER DEFAULT 1")
+            team_code TEXT NOT NULL,
+            player_name TEXT NOT NULL,
+            position TEXT NOT NULL,
+            power REAL NOT NULL,
+            training_power REAL DEFAULT 0,
+            UNIQUE(team_code, player_name)
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS standings(
+            team_code TEXT PRIMARY KEY,
+            played INTEGER DEFAULT 0,
+            wins INTEGER DEFAULT 0,
+            draws INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            goals_for INTEGER DEFAULT 0,
+            goals_against INTEGER DEFAULT 0,
+            points INTEGER DEFAULT 0
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS matches(
+            match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stage TEXT NOT NULL,
+            group_name TEXT,
+            team_a TEXT NOT NULL,
+            team_b TEXT NOT NULL,
+            score_a INTEGER,
+            score_b INTEGER,
+            winner_code TEXT,
+            played_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            note TEXT DEFAULT ''
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS tournament(
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            round INTEGER DEFAULT 1,
+            champion_code TEXT,
+            third_code TEXT
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS team_settings(
+            team_code TEXT PRIMARY KEY,
+            formation TEXT DEFAULT '4-3-3',
+            mentality TEXT DEFAULT 'balanced',
+            pressing TEXT DEFAULT 'medium',
+            passing TEXT DEFAULT 'mixed',
+            captain_id INTEGER,
+            penalty_taker_id INTEGER,
+            free_kick_id INTEGER,
+            corner_taker_id INTEGER
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS lineups(
+            team_code TEXT PRIMARY KEY,
+            player_ids TEXT NOT NULL DEFAULT '',
+            bench_ids TEXT NOT NULL DEFAULT ''
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS player_match_stats(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            minutes INTEGER DEFAULT 90,
+            rating REAL DEFAULT 6.0,
+            goals INTEGER DEFAULT 0,
+            assists INTEGER DEFAULT 0,
+            shots INTEGER DEFAULT 0,
+            shots_on_target INTEGER DEFAULT 0,
+            passes INTEGER DEFAULT 0,
+            tackles INTEGER DEFAULT 0,
+            yellow INTEGER DEFAULT 0,
+            red INTEGER DEFAULT 0,
+            clean_sheet INTEGER DEFAULT 0,
+            FOREIGN KEY(match_id) REFERENCES matches(match_id),
+            FOREIGN KEY(player_id) REFERENCES world_cup_players(player_id)
+        )""")
+        c.execute("INSERT OR IGNORE INTO tournament(id,round) VALUES(1,1)")
+        c.execute("""CREATE TABLE IF NOT EXISTS news(
+            news_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
 
 
-def seed_players_if_empty():
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) as cnt FROM players")
-        count = c.fetchone()["cnt"]
-        if count > 0:
-            return
-        for name, team, pos, price in SAMPLE_PLAYERS:
-            c.execute(
-                "INSERT INTO players (name, team, position, price, power) VALUES (?, ?, ?, ?, ?)",
-                (name, team, pos, price, price),
+
+# ========================= اسکواڈ کامل ۲۰۲۶ =========================
+# FIFA تأیید کرده که ۴۸ تیم و در مجموع ۱٬۲۴۸ بازیکن در فهرست‌های نهایی هستند.
+# این فایل داده عمومی، ۲۶ بازیکن هر تیم را نگه می‌دارد. در اولین اجرا دانلود
+# می‌شود و بعد در کنار دیتابیس به صورت cache استفاده خواهد شد.
+FULL_SQUADS_URL = "https://raw.githubusercontent.com/jojonki/wc2026-squad-power/refs/heads/main/data/squads.json"
+FULL_SQUADS_CACHE = BASE_DIR / "squads_2026_full.json"
+
+TEAM_NAME_TO_CODE = {
+    "Czech Republic":"CZE", "Mexico":"MEX", "South Africa":"RSA", "South Korea":"KOR",
+    "Canada":"CAN", "Bosnia and Herzegovina":"BIH", "Qatar":"QAT", "Switzerland":"SUI",
+    "Brazil":"BRA", "Morocco":"MAR", "Haiti":"HAI", "Scotland":"SCO",
+    "United States":"USA", "USA":"USA", "Paraguay":"PAR", "Australia":"AUS", "Turkiye":"TUR", "Türkiye":"TUR",
+    "Germany":"GER", "Ecuador":"ECU", "Ivory Coast":"CIV", "Côte d'Ivoire":"CIV", "Curacao":"CUW", "Curaçao":"CUW",
+    "Netherlands":"NED", "Japan":"JPN", "Sweden":"SWE", "Tunisia":"TUN",
+    "Belgium":"BEL", "Egypt":"EGY", "Iran":"IRN", "IR Iran":"IRN", "New Zealand":"NZL",
+    "Spain":"ESP", "Cape Verde":"CPV", "Cabo Verde":"CPV", "Saudi Arabia":"KSA", "Uruguay":"URU",
+    "France":"FRA", "Senegal":"SEN", "Iraq":"IRQ", "Norway":"NOR",
+    "Argentina":"ARG", "Algeria":"ALG", "Austria":"AUT", "Jordan":"JOR",
+    "Portugal":"POR", "DR Congo":"COD", "Congo DR":"COD", "Uzbekistan":"UZB", "Colombia":"COL",
+    "England":"ENG", "Croatia":"CRO", "Ghana":"GHA", "Panama":"PAN",
+}
+
+def load_full_squads():
+    import json, urllib.request
+    try:
+        if FULL_SQUADS_CACHE.exists():
+            raw = json.loads(FULL_SQUADS_CACHE.read_text(encoding="utf-8"))
+        else:
+            req = urllib.request.Request(
+                FULL_SQUADS_URL,
+                headers={"User-Agent": "WC2026-Pydroid-Bot/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=25) as r:
+                raw = json.loads(r.read().decode("utf-8"))
+            FULL_SQUADS_CACHE.write_text(
+                json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
             )
 
-
-def get_or_create_user(user_id: int, username: str):
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-        row = c.fetchone()
-        if row is None:
-            c.execute(
-                "INSERT INTO users (user_id, username, budget) VALUES (?, ?, ?)",
-                (user_id, username, INITIAL_BUDGET),
-            )
-            c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-            row = c.fetchone()
-        return row
-
-
-def get_user_budget(user_id: int) -> float:
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT budget FROM users WHERE user_id = ?", (user_id,))
-        row = c.fetchone()
-        return row["budget"] if row else 0.0
-
-
-def update_user_budget(user_id: int, new_budget: float):
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET budget = ? WHERE user_id = ?", (new_budget, user_id))
-
-
-def set_user_team_name(user_id: int, team_name: str):
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET team_name = ? WHERE user_id = ?", (team_name, user_id))
-
-
-def set_user_kit_colors(user_id: int, color1: str = None, color2: str = None):
-    with get_conn() as conn:
-        if color1 is not None:
-            conn.execute("UPDATE users SET kit_color1 = ? WHERE user_id = ?", (color1, user_id))
-        if color2 is not None:
-            conn.execute("UPDATE users SET kit_color2 = ? WHERE user_id = ?", (color2, user_id))
-
-
-def get_user_row(user_id: int):
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-        return c.fetchone()
-
-
-def team_display_name(user_row) -> str:
-    """اسم قابل‌نمایش تیم: اسم انتخابی کاربر (با رنگ‌هاش) یا در نبودش یوزرنیمش"""
-    name = user_row["team_name"] if "team_name" in user_row.keys() else None
-    name = name or user_row["username"] or "بدون‌نام"
-    c1 = user_row["kit_color1"] if "kit_color1" in user_row.keys() else None
-    c2 = user_row["kit_color2"] if "kit_color2" in user_row.keys() else None
-    emojis = ""
-    if c1 and c1 in KIT_COLOR_MAP:
-        emojis += KIT_COLOR_MAP[c1][1]
-    if c2 and c2 in KIT_COLOR_MAP:
-        emojis += KIT_COLOR_MAP[c2][1]
-    return f"{emojis} {name}".strip()
-
-
-def kit_color_keyboard(callback_prefix: str, exclude_key: str = None) -> InlineKeyboardMarkup:
-    rows = []
-    row = []
-    for key, label, emoji in KIT_COLORS:
-        if key == exclude_key:
-            continue
-        row.append(InlineKeyboardButton(f"{emoji} {label}", callback_data=f"{callback_prefix}_{key}"))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    return InlineKeyboardMarkup(rows)
-
-
-def sponsor_keyboard() -> InlineKeyboardMarkup:
-    rows = []
-    row = []
-    for key, label, emoji in SPONSORS:
-        row.append(InlineKeyboardButton(f"{emoji} {label}", callback_data=f"setsponsor_{key}"))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    return InlineKeyboardMarkup(rows)
-
-
-def set_user_sponsor(user_id: int, sponsor_key: str):
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET sponsor = ? WHERE user_id = ?", (sponsor_key, user_id))
-
-
-def lineup_tactics_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 چیدن ترکیب (فرمیشن)", callback_data="lineup_formations")],
-        [InlineKeyboardButton("🎯 انتخاب تاکتیک", callback_data="tactic_pick")],
-        [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="admin_back")],
-    ])
-
-
-def formation_keyboard() -> InlineKeyboardMarkup:
-    rows = []
-    row = []
-    for key in FORMATIONS:
-        row.append(InlineKeyboardButton(key, callback_data=f"setformation_{key}"))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="menu_lineup_tactics")])
-    return InlineKeyboardMarkup(rows)
-
-
-def tactic_keyboard() -> InlineKeyboardMarkup:
-    rows = []
-    for key, t in TACTICS.items():
-        rows.append([InlineKeyboardButton(f"{t['emoji']} {t['label']}", callback_data=f"settactic_{key}")])
-    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="menu_lineup_tactics")])
-    return InlineKeyboardMarkup(rows)
-
-
-def lineup_pick_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """چک‌لیست بازیکن‌های تیم (غیرمصدوم) برای انتخاب ترکیب اصلی، به تفکیک پست"""
-    required = get_lineup_required_counts(user_id) or {}
-    counts = get_lineup_position_counts(user_id)
-    lineup_ids = {p["player_id"] for p in get_user_lineup(user_id)}
-    squad = get_available_squad(user_id)
-
-    rows = []
-    for p in squad:
-        checked = "✅" if p["player_id"] in lineup_ids else "▫️"
-        pos = p["position"]
-        need = required.get(pos, 0)
-        have = counts.get(pos, 0)
-        label = f"{checked} {POSITION_FA.get(pos, pos)} | {p['name']} ({have}/{need})"
-        rows.append([InlineKeyboardButton(label, callback_data=f"togglelineup_{p['player_id']}")])
-    rows.append([InlineKeyboardButton("✅ ثبت ترکیب", callback_data="lineup_confirm")])
-    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="menu_lineup_tactics")])
-    return InlineKeyboardMarkup(rows)
-
-
-def edit_team_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 مشاهده تیم فعلی", callback_data="editteam_view")],
-        [InlineKeyboardButton("➕ افزودن بازیکن به تیم", callback_data="editteam_add")],
-        [InlineKeyboardButton("➖ حذف بازیکن از تیم", callback_data="editteam_remove")],
-        [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin_back_to_panel")],
-    ])
-
-
-def team_remove_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """دکمه‌ی حذف برای تک‌تک بازیکنای یه تیم خاص"""
-    team = get_user_team(user_id)
-    rows = []
-    for p in team:
-        label = f"❌ #{p['player_id']} {p['name']} ({POSITION_FA.get(p['position'], p['position'])})"
-        rows.append([InlineKeyboardButton(label, callback_data=f"editteam_rm_{p['player_id']}")])
-    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_edit_team_menu")])
-    return InlineKeyboardMarkup(rows)
-
-
-def get_today_str() -> str:
-    """امروز رو به شکل رشته YYYY-MM-DD برمی‌گردونه (برای مقایسه محدودیت روزانه)"""
-    return datetime.date.today().isoformat()
-
-
-def get_last_action_date(user_id: int, column: str):
-    """column باید 'last_battle_date' یا 'last_academy_date' باشه"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute(f"SELECT {column} FROM users WHERE user_id = ?", (user_id,))
-        row = c.fetchone()
-        return row[column] if row else None
-
-
-def set_last_action_date(user_id: int, column: str, date_str: str):
-    """column باید 'last_battle_date' یا 'last_academy_date' باشه"""
-    with get_conn() as conn:
-        conn.execute(f"UPDATE users SET {column} = ? WHERE user_id = ?", (date_str, user_id))
-
-
-def parse_id(text: str):
-    """آیدی عددی رو از متن استخراج می‌کنه؛ اگه کاربر با '#' یا فاصله فرستاده باشه هم درست کار می‌کنه"""
-    cleaned = text.strip().lstrip("#").strip()
-    if not cleaned.lstrip("-").isdigit():
-        return None
-    return int(cleaned)
-
-
-def get_setting(key: str, default: str = None):
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT value FROM settings WHERE key = ?", (key,))
-        row = c.fetchone()
-        return row["value"] if row else default
-
-
-def set_setting(key: str, value: str):
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO settings (key, value) VALUES (?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (key, value),
-        )
-
-
-def is_bot_enabled() -> bool:
-    return get_setting("bot_enabled", "1") == "1"
-
-
-def set_bot_enabled(enabled: bool):
-    set_setting("bot_enabled", "1" if enabled else "0")
-
-
-def get_all_players():
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM players ORDER BY position, price DESC")
-        return c.fetchall()
-
-
-def get_player(player_id: int):
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM players WHERE player_id = ?", (player_id,))
-        return c.fetchone()
-
-
-def add_player(name: str, team: str, position: str, price: float, power: float = None) -> int:
-    if power is None:
-        power = price
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO players (name, team, position, price, power) VALUES (?, ?, ?, ?, ?)",
-            (name, team, position, price, power),
-        )
-        return c.lastrowid
-
-
-def delete_player(player_id: int):
-    """بازیکن رو کامل حذف می‌کنه؛ اگه توی تیم کسی بود، از تیمش هم برداشته می‌شه"""
-    with get_conn() as conn:
-        conn.execute("DELETE FROM user_players WHERE player_id = ?", (player_id,))
-        conn.execute("DELETE FROM players WHERE player_id = ?", (player_id,))
-
-
-def get_user_team(user_id: int):
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT p.player_id, p.name, p.team, p.position, p.price,
-                   COALESCE(up.owned_power, p.power) as power,
-                   p.week_points, p.total_points,
-                   up.season_points as season_points, up.injury_matches_left as injury_matches_left
-            FROM players p
-            JOIN user_players up ON up.player_id = p.player_id
-            WHERE up.user_id = ?
-            ORDER BY p.position
-        """, (user_id,))
-        return c.fetchall()
-
-
-def get_user_team_size(user_id: int) -> int:
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) as cnt FROM user_players WHERE user_id = ?", (user_id,))
-        return c.fetchone()["cnt"]
-
-
-def is_player_in_team(user_id: int, player_id: int) -> bool:
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT 1 FROM user_players WHERE user_id = ? AND player_id = ?",
-            (user_id, player_id),
-        )
-        return c.fetchone() is not None
-
-
-def add_player_to_team(user_id: int, player_id: int):
-    """بازیکن رو به تیم کاربر اضافه می‌کنه و قدرت فعلی کاتالوگ رو به‌عنوان قدرت مخصوص این تیم
-    اسنپ‌شات می‌گیره — اینجوری اگه بعداً همین بازیکن رو یه تیم دیگه هم داشته باشه، ارتقای هرکدوم
-    کاملاً جدا از اون یکی حساب می‌شه"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT power FROM players WHERE player_id = ?", (player_id,))
-        row = c.fetchone()
-        base_power = row["power"] if row else 0
-        conn.execute(
-            "INSERT INTO user_players (user_id, player_id, owned_power) VALUES (?, ?, ?)",
-            (user_id, player_id, base_power),
-        )
-
-
-def remove_player_from_team(user_id: int, player_id: int):
-    with get_conn() as conn:
-        conn.execute(
-            "DELETE FROM user_players WHERE user_id = ? AND player_id = ?",
-            (user_id, player_id),
-        )
-        conn.execute(
-            "DELETE FROM user_lineup WHERE user_id = ? AND player_id = ?",
-            (user_id, player_id),
-        )
-
-
-def get_user_team_power(user_id: int) -> float:
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT COALESCE(SUM(COALESCE(up.owned_power, p.power)), 0) as total
-            FROM players p
-            JOIN user_players up ON up.player_id = p.player_id
-            WHERE up.user_id = ?
-        """, (user_id,))
-        return c.fetchone()["total"]
-
-
-def get_team_position_counts(user_id: int) -> dict:
-    """تعداد بازیکنای تیم رو به تفکیک پست برمی‌گردونه، مثل {'GK': 1, 'DF': 4, ...}"""
-    counts = {"GK": 0, "DF": 0, "MF": 0, "FW": 0}
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT p.position, COUNT(*) as cnt
-            FROM players p
-            JOIN user_players up ON up.player_id = p.player_id
-            WHERE up.user_id = ?
-            GROUP BY p.position
-        """, (user_id,))
-        for row in c.fetchall():
-            if row["position"] in counts:
-                counts[row["position"]] = row["cnt"]
-    return counts
-
-
-# ================== ترکیب اصلی (Lineup) و تاکتیک ==================
-
-def get_injured_squad_ids(user_id: int) -> set:
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT player_id FROM user_players WHERE user_id = ? AND injury_matches_left > 0",
-            (user_id,),
-        )
-        return {row["player_id"] for row in c.fetchall()}
-
-
-def get_available_squad(user_id: int):
-    """بازیکن‌های تیم که الان مصدوم نیستن"""
-    injured = get_injured_squad_ids(user_id)
-    return [p for p in get_user_team(user_id) if p["player_id"] not in injured]
-
-
-def get_injured_players(user_id: int):
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT p.*, up.injury_matches_left FROM players p
-            JOIN user_players up ON up.player_id = p.player_id
-            WHERE up.user_id = ? AND up.injury_matches_left > 0
-        """, (user_id,))
-        return c.fetchall()
-
-
-def set_formation(user_id: int, formation_key: str):
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET formation = ? WHERE user_id = ?", (formation_key, user_id))
-        conn.execute("DELETE FROM user_lineup WHERE user_id = ?", (user_id,))  # با عوض شدن آرایش، ترکیب قبلی پاک می‌شه
-
-
-def clear_lineup(user_id: int):
-    with get_conn() as conn:
-        conn.execute("DELETE FROM user_lineup WHERE user_id = ?", (user_id,))
-
-
-def toggle_lineup_player(user_id: int, player_id: int) -> bool:
-    """اگه توی ترکیب بود درش میاره، وگرنه اضافه می‌کنه. True برمی‌گردونه یعنی الان اضافه شده."""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT 1 FROM user_lineup WHERE user_id = ? AND player_id = ?", (user_id, player_id))
-        if c.fetchone():
-            conn.execute("DELETE FROM user_lineup WHERE user_id = ? AND player_id = ?", (user_id, player_id))
+        result = {}
+        for team in raw:
+            code = TEAM_NAME_TO_CODE.get(team.get("name",""))
+            if not code:
+                continue
+            players = []
+            for p in team.get("players", [])[:26]:
+                pos = p.get("pos", "MF")
+                if pos not in ("GK","DF","MF","FW"):
+                    pos = "MF"
+                players.append({
+                    "name": p.get("name",""),
+                    "pos": pos,
+                    "no": p.get("no"),
+                    "club": p.get("club",""),
+                })
+            if len(players) >= 23:
+                result[code] = players
+        if len(result) >= 48:
+            logger.info("Loaded full WC2026 squads: %s teams / %s players",
+                        len(result), sum(len(v) for v in result.values()))
+            return result
+    except Exception as e:
+        logger.warning("Full squad download failed: %s", e)
+    return {}
+
+def seed_data():
+    full = load_full_squads()
+    with db() as c:
+        for code, name, group, power in WORLD_CUP_TEAMS:
+            c.execute("INSERT OR IGNORE INTO national_teams(team_code,team_name,group_name,base_power) VALUES(?,?,?,?)", (code,name,group,power))
+            c.execute("INSERT OR IGNORE INTO standings(team_code) VALUES(?)", (code,))
+
+            # اگر هنوز مسابقه‌ای ثبت نشده، رکوردهای قبلی را به ۲۶ نفر رسمی تبدیل می‌کنیم
+            # تا placeholderها باقی نمانند و بازیکنان واقعی جایگزین شوند.
+            if code in full:
+                players = full[code]
+                existing = c.execute(
+                    "SELECT player_id FROM world_cup_players WHERE team_code=? ORDER BY player_id",
+                    (code,)
+                ).fetchall()
+
+                for i, pinfo in enumerate(players):
+                    pos = pinfo["pos"]
+                    p = max(55, min(96, power + random.uniform(-5,5)))
+                    bias = random.uniform(-4,4)
+                    speed=max(45,min(99,p+bias+(8 if pos=="FW" else 3 if pos=="MF" else 0)))
+                    shooting=max(40,min(99,p+bias+(10 if pos=="FW" else 3 if pos=="MF" else -12)))
+                    passing=max(40,min(99,p+bias+(7 if pos=="MF" else 2 if pos=="DF" else -8)))
+                    defending=max(40,min(99,p+bias+(10 if pos=="DF" else 4 if pos=="MF" else -15)))
+                    stamina=max(45,min(99,p+random.uniform(-4,4)))
+                    vals=(pinfo["name"],pos,p,speed,shooting,passing,defending,stamina)
+
+                    if i < len(existing):
+                        c.execute("""UPDATE world_cup_players
+                                     SET player_name=?,position=?,power=?,speed=?,shooting=?,passing=?,defending=?,stamina=?
+                                     WHERE player_id=?""", vals + (existing[i]["player_id"],))
+                    else:
+                        c.execute("""INSERT INTO world_cup_players
+                                     (team_code,player_name,position,power,speed,shooting,passing,defending,stamina)
+                                     VALUES(?,?,?,?,?,?,?,?,?)""",
+                                  (code,pinfo["name"],pos,p,speed,shooting,passing,defending,stamina))
+            else:
+                names = SQUADS.get(code) or [f"{name} بازیکن {i}" for i in range(1,24)]
+                if len(names) < 26:
+                    names = names + [f"{name} ذخیره {i}" for i in range(1, 27-len(names))]
+                bench_positions = ["GK","GK","DF","DF","DF","DF","DF","MF","MF","MF","MF","FW","FW","FW","FW"]
+                all_positions = POSITIONS + bench_positions
+                for i, player_name in enumerate(names[:26]):
+                    pos = all_positions[i]
+                    p = max(55, min(96, power + random.uniform(-7,7)))
+                    bias=random.uniform(-5,5)
+                    speed=max(45,min(99,p+bias+(8 if pos=="FW" else 3 if pos=="MF" else 0)))
+                    shooting=max(40,min(99,p+bias+(10 if pos=="FW" else 3 if pos=="MF" else -12)))
+                    passing=max(40,min(99,p+bias+(7 if pos=="MF" else 2 if pos=="DF" else -8)))
+                    defending=max(40,min(99,p+bias+(10 if pos=="DF" else 4 if pos=="MF" else -15)))
+                    stamina=max(45,min(99,p+random.uniform(-4,4)))
+                    c.execute("""INSERT OR IGNORE INTO world_cup_players
+                                 (team_code,player_name,position,power,speed,shooting,passing,defending,stamina)
+                                 VALUES(?,?,?,?,?,?,?,?,?)""",
+                              (code,player_name,pos,p,speed,shooting,passing,defending,stamina))
+
+def ensure_user(user_id, username=None):
+    with db() as c:
+        c.execute("INSERT OR IGNORE INTO users(user_id,username,training_budget) VALUES(?,?,?)", (user_id,username or "",START_TRAINING_BUDGET))
+        if username is not None:
+            c.execute("UPDATE users SET username=? WHERE user_id=?", (username,user_id))
+
+
+def is_admin(uid):
+    return uid in ADMIN_IDS
+
+
+def get_user(uid):
+    with db() as c:
+        return c.execute("SELECT * FROM users WHERE user_id=?", (uid,)).fetchone()
+
+
+def get_team(code):
+    with db() as c:
+        return c.execute("SELECT * FROM national_teams WHERE team_code=?", (code.upper(),)).fetchone()
+
+
+def get_my_team(uid):
+    with db() as c:
+        return c.execute("""SELECT nt.* FROM national_teams nt
+                           JOIN users u ON u.national_team_code=nt.team_code
+                           WHERE u.user_id=?""", (uid,)).fetchone()
+
+
+def get_power(code):
+    with db() as c:
+        row = c.execute("SELECT base_power,training_power FROM national_teams WHERE team_code=?", (code,)).fetchone()
+        return (row["base_power"] + row["training_power"]) if row else 70
+
+
+def assign_team(uid, code):
+    code = code.upper()
+    ensure_user(uid)
+    with db() as c:
+        team = c.execute("SELECT * FROM national_teams WHERE team_code=?", (code,)).fetchone()
+        if not team:
+            return False, "کد تیم پیدا نشد."
+        if team["assigned_user_id"] and team["assigned_user_id"] != uid:
+            return False, "این تیم قبلاً به کاربر دیگری اختصاص داده شده."
+        old = c.execute("SELECT national_team_code FROM users WHERE user_id=?", (uid,)).fetchone()
+        if old and old["national_team_code"] and old["national_team_code"] != code:
+            c.execute("UPDATE national_teams SET assigned_user_id=NULL WHERE team_code=?", (old["national_team_code"],))
+        c.execute("UPDATE national_teams SET assigned_user_id=? WHERE team_code=?", (uid,code))
+        c.execute("UPDATE users SET national_team_code=? WHERE user_id=?", (code,uid))
+    return True, f"تیم ملی {team['team_name']} به کاربر {uid} اختصاص داده شد."
+
+
+def release_team(uid):
+    with db() as c:
+        row = c.execute("SELECT national_team_code FROM users WHERE user_id=?", (uid,)).fetchone()
+        if not row or not row["national_team_code"]:
+            return False, "این کاربر تیم ملی ندارد."
+        code = row["national_team_code"]
+        c.execute("UPDATE national_teams SET assigned_user_id=NULL WHERE team_code=?", (code,))
+        c.execute("UPDATE users SET national_team_code=NULL WHERE user_id=?", (uid,))
+    return True, "تیم ملی کاربر آزاد شد."
+
+
+def add_budget(uid, amount):
+    with db() as c:
+        row = c.execute("SELECT 1 FROM users WHERE user_id=?", (uid,)).fetchone()
+        if not row:
             return False
-        conn.execute("INSERT INTO user_lineup (user_id, player_id) VALUES (?, ?)", (user_id, player_id))
+        c.execute("UPDATE users SET training_budget=training_budget+? WHERE user_id=?", (amount,uid))
         return True
 
 
-def get_user_lineup(user_id: int):
-    """بازیکن‌های ترکیب اصلی فعلی (فقط اونایی که مصدوم نشدن)"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT p.player_id, p.name, p.team, p.position, p.price,
-                   COALESCE(up.owned_power, p.power) as power,
-                   p.week_points, p.total_points
-            FROM players p
-            JOIN user_lineup ul ON ul.player_id = p.player_id
-            JOIN user_players up ON up.player_id = p.player_id AND up.user_id = ul.user_id
-            WHERE ul.user_id = ? AND up.injury_matches_left = 0
-        """, (user_id,))
-        return c.fetchall()
-
-
-def get_lineup_position_counts(user_id: int) -> dict:
-    counts = {"GK": 0, "DF": 0, "MF": 0, "FW": 0}
-    for p in get_user_lineup(user_id):
-        if p["position"] in counts:
-            counts[p["position"]] += 1
-    return counts
-
-
-def get_lineup_required_counts(user_id: int):
-    """بر اساس آرایش انتخابی، تعداد لازم هر پست رو برمی‌گردونه (دروازه‌بان همیشه ۱)"""
-    row = get_user_row(user_id)
-    formation_key = row["formation"] if row and row["formation"] in FORMATIONS else None
-    if not formation_key:
-        return None
-    req = dict(FORMATIONS[formation_key])
-    req["GK"] = 1
-    return req
-
-
-def is_lineup_complete(user_id: int) -> bool:
-    required = get_lineup_required_counts(user_id)
-    if not required:
-        return False
-    counts = get_lineup_position_counts(user_id)
-    return all(counts.get(pos, 0) == need for pos, need in required.items())
-
-
-def get_match_power(user_id: int) -> float:
-    """قدرت موثر تیم برای بازی: اگه ترکیب اصلی کامل چیده شده باشه از همون استفاده می‌کنه
-    (که فقط ۱۱ نفره)، وگرنه (برای سازگاری با تیم‌هایی که هنوز ترکیب نچیدن) از کل بازیکن‌های
-    غیرمصدوم تیم استفاده می‌کنه."""
-    if is_lineup_complete(user_id):
-        return sum(p["power"] for p in get_user_lineup(user_id))
-    return sum(p["power"] for p in get_available_squad(user_id))
-
-
-def set_user_tactic(user_id: int, tactic_key: str):
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET tactic = ? WHERE user_id = ?", (tactic_key, user_id))
-
-
-def get_user_tactic(user_id: int) -> str:
-    row = get_user_row(user_id)
-    t = row["tactic"] if row and row["tactic"] in TACTICS else "standard"
-    return t
-
-
-# ================== ورزشگاه و هواداران ==================
-
-def get_stadium_upgrade_cost(current_level: int) -> int:
-    return STADIUM_UPGRADE_BASE_COST * current_level
-
-
-def upgrade_stadium(user_id: int) -> str:
-    row = get_user_row(user_id)
-    level = row["stadium_level"] or 1
-    if level >= STADIUM_MAX_LEVEL:
-        return f"ورزشگاهت همین الانشم توی حداکثر سطح ({STADIUM_MAX_LEVEL}) هست."
-    cost = get_stadium_upgrade_cost(level)
-    budget = get_user_budget(user_id)
-    if budget < cost:
-        return f"برای ارتقا به سطح {level+1} به {cost} م.ت نیاز داری؛ بودجه‌ت {budget:.1f} م.ت هست."
-    update_user_budget(user_id, budget - cost)
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET stadium_level = stadium_level + 1 WHERE user_id = ?", (user_id,))
-    return f"🏟 ورزشگاهت به سطح {level+1} ارتقا پیدا کرد! ({cost} م.ت کم شد)"
-
-
-def update_fans(user_id: int, delta: int):
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE users SET fans = MAX(0, fans + ?) WHERE user_id = ?",
-            (delta, user_id),
-        )
-
-
-def apply_match_gate_income(user_id: int):
-    """درآمد فروش بلیت بر اساس تعداد هواداران و سطح ورزشگاه، بعد از هر بازی رسمی"""
-    row = get_user_row(user_id)
-    fans = row["fans"] or 0
-    level = row["stadium_level"] or 1
-    income = (fans // 1000) * level
-    if income > 0:
-        update_user_budget(user_id, get_user_budget(user_id) + income)
-    return income
-
-
-# ================== مصدومیت ==================
-
-def process_injuries_after_match(user_id: int, played_player_ids: list):
-    """بعد از هر بازی رسمی: هر بازیکنی که بازی کرده یه شانس کوچیک مصدومیتِ چند بازی داره،
-    و شمارش‌معکوس مصدومیت‌های قبلیِ کل بازیکنای تیم هم یکی کم می‌شه"""
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE user_players SET injury_matches_left = MAX(0, injury_matches_left - 1) WHERE user_id = ?",
-            (user_id,),
-        )
-    new_injuries = []
-    for pid in played_player_ids:
-        if random.random() < INJURY_CHANCE:
-            duration = random.randint(INJURY_MIN_MATCHES, INJURY_MAX_MATCHES)
-            with get_conn() as conn:
-                conn.execute(
-                    "UPDATE user_players SET injury_matches_left = ? WHERE user_id = ? AND player_id = ?",
-                    (duration, user_id, pid),
-                )
-            player = get_player(pid)
-            if player:
-                new_injuries.append((player["name"], duration))
-    return new_injuries
-
-
-def get_missing_positions_text(user_id: int):
-    """اگه تیم ترکیب لازم (پست‌ها) رو نداشته باشه، متن توضیح کمبودها رو برمی‌گردونه؛ وگرنه None"""
-    counts = get_team_position_counts(user_id)
-    missing = []
-    for pos, need in REQUIRED_POSITION_COUNTS.items():
-        have = counts.get(pos, 0)
-        if have < need:
-            missing.append(f"{POSITION_FA.get(pos, pos)}: {have} از {need} لازم")
-    if not missing:
-        return None
-    lines = ["ترکیب تیمت کامل نیست! برای بازی حداقل باید داشته باشی:"]
-    lines.append(
-        f"{REQUIRED_POSITION_COUNTS['GK']} دروازه‌بان، "
-        f"{REQUIRED_POSITION_COUNTS['DF']} مدافع، "
-        f"{REQUIRED_POSITION_COUNTS['MF']} هافبک، "
-        f"{REQUIRED_POSITION_COUNTS['FW']} مهاجم"
-    )
-    lines.append("\nکمبودهای تیمت:")
-    lines.extend(f"- {m}" for m in missing)
-    return "\n".join(lines)
-
-
-def get_random_opponent(exclude_user_id: int, min_team_size: int):
-    """یه کاربر دیگه که حداقل min_team_size بازیکن داره و ترکیب پست‌هاش کامله رو تصادفی برمی‌گردونه"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT u.user_id, u.username, COUNT(up.player_id) as team_size
-            FROM users u
-            JOIN user_players up ON up.user_id = u.user_id
-            WHERE u.user_id != ?
-            GROUP BY u.user_id
-            HAVING team_size >= ?
-        """, (exclude_user_id, min_team_size))
-        rows = c.fetchall()
-        if not rows:
-            return None
-        valid_rows = [row for row in rows if get_missing_positions_text(row["user_id"]) is None]
-        if not valid_rows:
-            return None
-        return random.choice(valid_rows)
-
-
-def get_all_matchday_eligible_users():
-    """همه کاربرایی که تیمشون کامله (اندازه و ترکیب پست) و آماده‌ی بازی هستن، بدون هیچ سقفی
-    (ادمین‌ها هیچ‌وقت جزو تیم‌های لیگ حساب نمی‌شن)"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT u.user_id, u.total_points, COUNT(up.player_id) as team_size
-            FROM users u
-            JOIN user_players up ON up.user_id = u.user_id
-            GROUP BY u.user_id
-            HAVING team_size >= ?
-            ORDER BY u.total_points DESC
-        """, (MIN_TEAM_SIZE,))
-        rows = c.fetchall()
-    return [
-        row["user_id"] for row in rows
-        if row["user_id"] not in ADMIN_IDS and get_missing_positions_text(row["user_id"]) is None
-    ]
-
-
-def get_matchday_eligible_users():
-    """همه‌ی تیم‌های آماده رو برمی‌گردونه، بدون هیچ سقفی"""
-    return get_all_matchday_eligible_users()
-
-
-def get_all_teams_for_manual():
-    """همه‌ی کاربرایی که حداقل یه بازیکن دارن رو برمی‌گردونه (مهم نیست تیمشون کامل باشه یا نه)،
-    برای اینکه ادمین بتونه خودش دستی جفتشون کنه. ادمین‌ها جزو این لیست نیستن."""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT u.user_id, COUNT(up.player_id) as team_size
-            FROM users u
-            JOIN user_players up ON up.user_id = u.user_id
-            GROUP BY u.user_id
-            HAVING team_size >= 1
-            ORDER BY u.user_id
-        """)
-        rows = c.fetchall()
-    return [row["user_id"] for row in rows if row["user_id"] not in ADMIN_IDS]
-
-
-def manual_teams_keyboard(exclude_id: int = None) -> InlineKeyboardMarkup:
-    team_ids = get_all_teams_for_manual()
-    rows = []
-    for uid in team_ids:
-        if uid == exclude_id:
-            continue
-        row = get_user_row(uid)
-        size = get_user_team_size(uid)
-        label = f"{team_display_name(row)} ({size} نفر)"
-        rows.append([InlineKeyboardButton(label, callback_data=f"manualpick_{uid}")])
-    rows.append([InlineKeyboardButton("🏁 پایان و اعلام نتایج در کانال", callback_data="manual_finish")])
-    rows.append([InlineKeyboardButton("❌ لغو و بازگشت به پنل", callback_data="manual_cancel")])
-    return InlineKeyboardMarkup(rows)
-
-
-async def play_one_match(bot, user_a: int, user_b: int) -> str:
-    """یه بازی رسمی (لیگ/دستی) بین دو تیم مشخص برگزار می‌کنه: تاکتیک و ترکیب اصلی رو حساب می‌کنه،
-    نتیجه، گل‌زن‌ها، پاس‌گل‌ها، بهترین بازیکن زمین، هواداران، درآمد ورزشگاه، مصدومیت و پاداش اسپانسر
-    رو مدیریت می‌کنه، به هر دو طرف خصوصی پیام می‌ده و خط نتیجه (برای نمایش/کانال) رو برمی‌گردونه."""
-    base_power_a = get_match_power(user_a)
-    base_power_b = get_match_power(user_b)
-
-    tactic_a = TACTICS[get_user_tactic(user_a)]
-    tactic_b = TACTICS[get_user_tactic(user_b)]
-    adj_power_a = (base_power_a + 1) * tactic_a["atk"] / tactic_b["def"]
-    adj_power_b = (base_power_b + 1) * tactic_b["atk"] / tactic_a["def"]
-
-    goals_a, goals_b = simulate_goals(adj_power_a, adj_power_b)
-
-    if goals_a == goals_b:
-        record_battle_result(user_a, user_b, is_draw=True)
-        result_a = f"🤝 مساوی! {DRAW_POINTS} امتیاز گرفتی."
-        result_b = f"🤝 مساوی! {DRAW_POINTS} امتیاز گرفتی."
-    elif goals_a > goals_b:
-        record_battle_result(user_a, user_b)
-        result_a = f"🏆 بردی! {WIN_POINTS} امتیاز گرفتی."
-        result_b = "😔 باختی."
-    else:
-        record_battle_result(user_b, user_a)
-        result_a = "😔 باختی."
-        result_b = f"🏆 بردی! {WIN_POINTS} امتیاز گرفتی."
-
-    record_fixture(user_a, user_b)
-
-    row_a = get_user_row(user_a)
-    row_b = get_user_row(user_b)
-    name_a = team_display_name(row_a)
-    name_b = team_display_name(row_b)
-
-    bonus_note_a = ""
-    bonus_note_b = ""
-    if row_a["sponsor"] in SPONSOR_MAP:
-        update_user_budget(user_a, get_user_budget(user_a) + SPONSOR_MATCH_BONUS)
-        label, emoji = SPONSOR_MAP[row_a["sponsor"]]
-        bonus_note_a = f"\n{emoji} اسپانسر {label}: +{SPONSOR_MATCH_BONUS} میلیون تومان"
-    if row_b["sponsor"] in SPONSOR_MAP:
-        update_user_budget(user_b, get_user_budget(user_b) + SPONSOR_MATCH_BONUS)
-        label, emoji = SPONSOR_MAP[row_b["sponsor"]]
-        bonus_note_b = f"\n{emoji} اسپانسر {label}: +{SPONSOR_MATCH_BONUS} میلیون تومان"
-
-    set_last_action_date(user_a, "last_battle_date", get_today_str())
-    set_last_action_date(user_b, "last_battle_date", get_today_str())
-
-    # ---- ترکیب واقعی بازی‌کننده‌ها، گل‌زن‌ها و پاس‌گل‌ها ----
-    players_a = get_match_participants(user_a)
-    players_b = get_match_participants(user_b)
-    events = build_match_events(players_a, players_b, goals_a, goals_b)
-    timeline = format_match_events(events)
-    timeline_block = f"\n\n⚽ گل‌ها:\n{timeline}" if timeline else ""
-
-    # ---- امتیاز بازیکنان و بهترین بازیکن زمین ----
-    scores_a = compute_match_scores(players_a, events, "a", goals_b)
-    scores_b = compute_match_scores(players_b, events, "b", goals_a)
-    apply_match_scores(user_a, scores_a)
-    apply_match_scores(user_b, scores_b)
-
-    mvp_text = ""
-    best_pid_a = max(scores_a, key=scores_a.get) if scores_a else None
-    best_pid_b = max(scores_b, key=scores_b.get) if scores_b else None
-    candidates = []
-    if best_pid_a:
-        candidates.append((scores_a[best_pid_a], best_pid_a, players_a, name_a))
-    if best_pid_b:
-        candidates.append((scores_b[best_pid_b], best_pid_b, players_b, name_b))
-    if candidates:
-        best_score, best_pid, best_players, best_team_name = max(candidates, key=lambda x: x[0])
-        best_player = next((p for p in best_players if p["player_id"] == best_pid), None)
-        if best_player:
-            mvp_text = f"\n\n⭐ بهترین بازیکن زمین: {best_player['name']} ({best_team_name})"
-
-    # ---- هواداران ----
-    if goals_a > goals_b:
-        update_fans(user_a, random.randint(50, 150))
-        update_fans(user_b, -random.randint(20, 80))
-    elif goals_b > goals_a:
-        update_fans(user_b, random.randint(50, 150))
-        update_fans(user_a, -random.randint(20, 80))
-    else:
-        update_fans(user_a, random.randint(5, 25))
-        update_fans(user_b, random.randint(5, 25))
-
-    # ---- درآمد فروش بلیت ورزشگاه ----
-    income_a = apply_match_gate_income(user_a)
-    income_b = apply_match_gate_income(user_b)
-    income_note_a = f"\n🏟 درآمد بلیت: +{income_a} م.ت" if income_a > 0 else ""
-    income_note_b = f"\n🏟 درآمد بلیت: +{income_b} م.ت" if income_b > 0 else ""
-
-    # ---- مصدومیت ----
-    injuries_a = process_injuries_after_match(user_a, [p["player_id"] for p in players_a])
-    injuries_b = process_injuries_after_match(user_b, [p["player_id"] for p in players_b])
-    injury_note_a = ""
-    if injuries_a:
-        injury_note_a = "\n\n🚑 مصدومیت:\n" + "\n".join(f"{n} ({d} بازی محروم)" for n, d in injuries_a)
-    injury_note_b = ""
-    if injuries_b:
-        injury_note_b = "\n\n🚑 مصدومیت:\n" + "\n".join(f"{n} ({d} بازی محروم)" for n, d in injuries_b)
-
-    for target_id, text in (
-        (user_a, f"⚔️ نتیجه بازی:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}{mvp_text}\n\n{result_a}{bonus_note_a}{income_note_a}{injury_note_a}"),
-        (user_b, f"⚔️ نتیجه بازی:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}{mvp_text}\n\n{result_b}{bonus_note_b}{income_note_b}{injury_note_b}"),
-    ):
-        try:
-            await bot.send_message(chat_id=target_id, text=text)
-        except Exception:
-            pass
-
-    return f"{name_a}  {goals_a} - {goals_b}  {name_b}"
-
-
-async def play_friendly_match(bot, requester_id: int, opponent_id: int) -> str:
-    """بازی دوستانه بین دو کاربر: نتیجه واقعیه، تاکتیک و ترکیب اصلی هم حساب می‌شه،
-    ولی هیچ تاثیری روی امتیاز/برد/باخت جدول لیگ، درآمد اسپانسر، هواداران یا مصدومیت نداره
-    (فقط برای تفریحه). متن نتیجه برای درخواست‌دهنده برگردونده می‌شه؛ به حریف هم خصوصی پیام می‌ره."""
-    base_power_a = get_match_power(requester_id)
-    base_power_b = get_match_power(opponent_id)
-    tactic_a = TACTICS[get_user_tactic(requester_id)]
-    tactic_b = TACTICS[get_user_tactic(opponent_id)]
-    adj_power_a = (base_power_a + 1) * tactic_a["atk"] / tactic_b["def"]
-    adj_power_b = (base_power_b + 1) * tactic_b["atk"] / tactic_a["def"]
-    goals_a, goals_b = simulate_goals(adj_power_a, adj_power_b)
-
-    row_a = get_user_row(requester_id)
-    row_b = get_user_row(opponent_id)
-    name_a = team_display_name(row_a)
-    name_b = team_display_name(row_b)
-
-    if goals_a > goals_b:
-        result_a, result_b = "🏆 بردی!", "😔 باختی."
-    elif goals_b > goals_a:
-        result_a, result_b = "😔 باختی.", "🏆 بردی!"
-    else:
-        result_a = result_b = "🤝 مساوی شد."
-
-    footer = "\n\n(این یه بازی دوستانه بود، روی جدول لیگ و درآمد اسپانسر تاثیری نداره)"
-    players_a = get_match_participants(requester_id)
-    players_b = get_match_participants(opponent_id)
-    events = build_match_events(players_a, players_b, goals_a, goals_b)
-    timeline = format_match_events(events)
-    timeline_block = f"\n\n⚽ گل‌ها:\n{timeline}" if timeline else ""
-    text_a = f"🤝 بازی دوستانه:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}\n\n{result_a}{footer}"
-    text_b = f"🤝 بازی دوستانه:\n\n{name_a}  {goals_a} - {goals_b}  {name_b}{timeline_block}\n\n{result_b}{footer}"
-
-    try:
-        await bot.send_message(chat_id=opponent_id, text=text_b)
-    except Exception:
-        pass
-
-    return text_a
-
-
-def get_friendly_opponents(exclude_id: int):
-    """همه‌ی کاربرایی که حداقل یه بازیکن دارن (مهم نیست ترکیبشون کامل باشه یا نه)،
-    به‌جز خود کاربر و ادمین‌ها، برای بازی دوستانه"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT u.user_id, COUNT(up.player_id) as team_size
-            FROM users u
-            JOIN user_players up ON up.user_id = u.user_id
-            GROUP BY u.user_id
-            HAVING team_size >= 1
-            ORDER BY u.user_id
-        """)
-        rows = c.fetchall()
-    return [row for row in rows if row["user_id"] != exclude_id and row["user_id"] not in ADMIN_IDS]
-
-
-def friendly_opponents_keyboard(exclude_id: int) -> InlineKeyboardMarkup:
-    rows = []
-    for row in get_friendly_opponents(exclude_id):
-        uid = row["user_id"]
-        urow = get_user_row(uid)
-        label = f"{team_display_name(urow)} ({row['team_size']} نفر)"
-        rows.append([InlineKeyboardButton(label, callback_data=f"friendlypick_{uid}")])
-    rows.append([InlineKeyboardButton("❌ انصراف", callback_data="friendly_cancel")])
-    return InlineKeyboardMarkup(rows)
-
-
-async def run_matchday(bot) -> str:
-    """همه‌ی تیم‌های آماده رو به‌صورت دوره‌ای (لیگی) با هم بازی می‌ده — هر جفت تیم رفت و برگشت
-    (دقیقاً ۲ بار) با هم بازی می‌کنن؛ جفت‌هایی که هر دو بازیشون تموم شده دیگه تکرار نمی‌شن.
-    این یعنی اگه یه تیم وسط فصل بیاد، خودکار فقط با بقیه‌ی تیم‌ها (که هنوز رفت‌وبرگشتشون تموم نشده) جفت می‌شه.
-    به هر بازیکن نتیجه‌ی بازی‌هاش خصوصی می‌رسه و خلاصه‌ی کامل هم به کانال (اگه تنظیم شده باشه) پست می‌شه."""
-    eligible = get_matchday_eligible_users()
-    match_lines = []
-    skipped_already_played = 0
-
-    if len(eligible) < 2:
-        return "⚠️ برای برگزاری بازی حداقل به ۲ تیم آماده نیاز داریم."
-
-    # هر جفت تیم رفت و برگشت (۲ بار) با هم بازی می‌کنن؛ جفت‌هایی که کامل شدن رد می‌شن
-    for idx_a in range(len(eligible)):
-        for idx_b in range(idx_a + 1, len(eligible)):
-            user_a, user_b = eligible[idx_a], eligible[idx_b]
-            if has_played_fixture(user_a, user_b):
-                skipped_already_played += 1
-                continue
-            line = await play_one_match(bot, user_a, user_b)
-            match_lines.append(line)
-
-    if match_lines:
-        channel_text = "⚽️ نتایج بازی‌های امروز:\n\n" + "\n".join(match_lines)
-        if CHANNEL_ID:
-            try:
-                await bot.send_message(chat_id=CHANNEL_ID, text=channel_text)
-            except Exception as e:
-                logger.warning(f"ارسال نتایج به کانال ناموفق بود: {e}")
-
-    summary = f"✅ روز بازی تموم شد. {len(eligible)} تیم شرکت کردن و {len(match_lines)} بازی جدید برگزار شد."
-    if skipped_already_played:
-        summary += f"\n({skipped_already_played} جفت رفت‌وبرگشتشون قبلاً کامل شده بود، دوباره بازی نکردن.)"
-    if not match_lines:
-        summary += "\n\nهمه‌ی تیم‌های آماده رفت‌وبرگشتشون کامل شده؛ چیز جدیدی برای بازی نبود."
-    if not CHANNEL_ID:
-        summary += "\n\n⚠️ آیدی کانال تنظیم نشده، برای همین نتایج فقط به خود بازیکنا پیام خصوصی شد."
-    return summary
-
-
-def render_final_season_table() -> str:
-    rows = get_leaderboard(50)
-    if not rows:
-        return "🏁 فصل تموم شد، ولی هیچ تیمی امتیازی نداشت."
-    lines = ["🏁 فصل به پایان رسید! همه‌ی تیم‌ها رفت و برگشت با هم بازی کردن.\n", "🏅 جدول نهایی لیگ:\n"]
-    medals = ["🥇", "🥈", "🥉"]
-    for i, r in enumerate(rows):
-        games = (r["wins"] or 0) + (r["draws"] or 0) + (r["losses"] or 0)
-        avg = (r["total_points"] / games) if games > 0 else 0.0
-        prefix = medals[i] if i < 3 else f"{i+1}."
-        lines.append(f"{prefix} {team_display_name(r)} - میانگین {avg:.2f} ({games} بازی، {r['total_points']:.1f} امتیاز کل)")
-    champion = team_display_name(rows[0])
-    lines.append(f"\n🏆 قهرمان فصل: {champion} 🏆")
-    return "\n".join(lines)
-
-
-async def auto_matchday_job(context: ContextTypes.DEFAULT_TYPE):
-    """این تابع هر ۵ ساعت خودکار اجرا می‌شه: یه دور بازی برگزار می‌کنه، و اگه همه‌ی تیم‌ها
-    رفت‌وبرگشتشون تموم شده باشه، جدول نهایی و قهرمان رو اعلام می‌کنه و خودش متوقف می‌شه."""
-    bot = context.bot
-    try:
-        summary = await run_matchday(bot)
-        logger.info(f"اجرای خودکار فصل: {summary}")
-    except Exception as e:
-        logger.warning(f"خطا توی اجرای خودکار فصل: {e}")
-        return
-
-    if is_season_complete():
-        final_text = render_final_season_table()
-        if CHANNEL_ID:
-            try:
-                await bot.send_message(chat_id=CHANNEL_ID, text=final_text)
-            except Exception as e:
-                logger.warning(f"ارسال جدول نهایی به کانال ناموفق بود: {e}")
-        for admin_id in ADMIN_IDS:
-            try:
-                await bot.send_message(chat_id=admin_id, text="✅ فصل خودکار تموم شد و متوقف شد.\n\n" + final_text)
-            except Exception:
-                pass
-        if context.job:
-            context.job.schedule_removal()
-
-
-def _poisson_random(lam: float) -> int:
-    """یه عدد تصادفی به سبک توزیع پواسون تولید می‌کنه (بدون نیاز به numpy)"""
-    lam = max(lam, 0.05)
-    limit = math.exp(-lam)
-    k = 0
+def train_team(uid, amount):
+    if amount <= 0:
+        return False, "مقدار تمرین باید بیشتر از صفر باشد."
+    with db() as c:
+        user = c.execute("SELECT * FROM users WHERE user_id=?", (uid,)).fetchone()
+        if not user or not user["national_team_code"]:
+            return False, "اول باید تیم ملی داشته باشی."
+        if user["training_budget"] < amount:
+            return False, f"بودجه کافی نیست. موجودی: {user['training_budget']:.1f}"
+        gain = amount / TRAINING_COST_PER_POINT
+        c.execute("UPDATE users SET training_budget=training_budget-? WHERE user_id=?", (amount,uid))
+        c.execute("UPDATE national_teams SET training_power=training_power+? WHERE team_code=?", (gain,user["national_team_code"]))
+        return True, f"قدرت تیم +{gain:.1f} شد."
+
+
+def train_player(uid, player_id, amount):
+    if amount <= 0:
+        return False, "مقدار تمرین باید بیشتر از صفر باشد."
+    with db() as c:
+        user = c.execute("SELECT * FROM users WHERE user_id=?", (uid,)).fetchone()
+        if not user or not user["national_team_code"]:
+            return False, "اول تیم ملی بگیر."
+        if user["training_budget"] < amount:
+            return False, "بودجه تمرینی کافی نیست."
+        p = c.execute("SELECT * FROM world_cup_players WHERE player_id=? AND team_code=?", (player_id,user["national_team_code"])).fetchone()
+        if not p:
+            return False, "بازیکن پیدا نشد."
+        gain = amount / PLAYER_TRAINING_COST
+        c.execute("UPDATE users SET training_budget=training_budget-? WHERE user_id=?", (amount,uid))
+        c.execute("UPDATE world_cup_players SET training_power=training_power+? WHERE player_id=?", (gain,player_id))
+        return True, f"قدرت {p['player_name']} +{gain:.1f} شد."
+
+
+def team_player_list(code):
+    with db() as c:
+        return c.execute("SELECT * FROM world_cup_players WHERE team_code=? ORDER BY CASE position WHEN 'GK' THEN 1 WHEN 'DF' THEN 2 WHEN 'MF' THEN 3 ELSE 4 END, player_id", (code,)).fetchall()
+
+
+def team_name(code):
+    row = get_team(code)
+    return row["team_name"] if row else code
+
+
+def team_emoji(code):
+    flags = {"FRA":"🇫🇷","BRA":"🇧🇷","ARG":"🇦🇷","POR":"🇵🇹","ESP":"🇪🇸","ENG":"🏴","GER":"🇩🇪","NED":"🇳🇱","BEL":"🇧🇪","IRN":"🇮🇷","JPN":"🇯🇵","MAR":"🇲🇦","MEX":"🇲🇽","USA":"🇺🇸","URU":"🇺🇾","CRO":"🇭🇷"}
+    return flags.get(code,"🌍")
+
+
+def stage_label(round_no):
+    return {1:"گروهی - دور اول",2:"گروهی - دور دوم",3:"گروهی - دور سوم",4:"دور ۳۲",5:"دور ۱۶",6:"یک‌چهارم نهایی",7:"نیمه‌نهایی",8:"رده‌بندی",9:"فینال",10:"پایان جام"}.get(round_no,"نامشخص")
+
+
+def tournament_round():
+    with db() as c:
+        return c.execute("SELECT round FROM tournament WHERE id=1").fetchone()["round"]
+
+
+def set_round(n):
+    with db() as c:
+        c.execute("UPDATE tournament SET round=? WHERE id=1", (n,))
+
+# ========================= شبیه‌سازی =========================
+def poisson(lam):
+    lam = max(0.05, min(4.5, lam))
+    l = math.exp(-lam)
     p = 1.0
-    while True:
+    k = 0
+    while p > l:
         k += 1
         p *= random.random()
-        if p <= limit:
-            return k - 1
+    return k - 1
 
 
-def simulate_goals(power_a: float, power_b: float):
-    """بر اساس قدرت دو تیم، یه نتیجه گل‌به‌گل واقعی (مثل ۳-۱) شبیه‌سازی می‌کنه.
-    فرمول طوری تنظیم شده که تفاوت قدرت واقعاً روی نتیجه تاثیر بذاره، نه اینکه حس تصادفی بده:
-    تیم‌های هم‌قدرت تقریباً ۵۰-۵۰ هستن، ولی هرچی فاصله‌ی قدرت بیشتر بشه، تیم قوی‌تر خیلی بیشتر می‌بره."""
-    pa = max(power_a, 0) + 1
-    pb = max(power_b, 0) + 1
-    power_exponent = 2.2   # هرچی بزرگ‌تر باشه، تاثیر قدرت روی نتیجه تعیین‌کننده‌تره
-    base_goals = 0.35      # حداقل میانگین گل هر تیم (حتی تیم خیلی ضعیف)
-    goal_spread = 3.2       # سقف اضافه‌ی گل بر اساس برتری قدرت
-
-    ratio_a = (pa ** power_exponent) / (pa ** power_exponent + pb ** power_exponent)
-    avg_a = base_goals + goal_spread * ratio_a
-    avg_b = base_goals + goal_spread * (1 - ratio_a)
-    return _poisson_random(avg_a), _poisson_random(avg_b)
-
-
-def get_match_participants(user_id: int):
-    """بازیکن‌هایی که واقعاً توی این بازی حساب می‌شن: اگه ترکیب اصلی کامل چیده شده، همون ۱۱ نفر،
-    وگرنه کل بازیکن‌های غیرمصدوم تیم (برای سازگاری با تیم‌هایی که هنوز ترکیب نچیدن)"""
-    if is_lineup_complete(user_id):
-        return get_user_lineup(user_id)
-    return get_available_squad(user_id)
+STADIUMS = [
+    "🏟️ استادیوم آتسکا", "🏟️ استادیوم مت‌لایف", "🏟️ استادیوم سوفای", "🏟️ استادیوم مرسدس‌بنز",
+    "🏟️ استادیوم هارد راک", "🏟️ استادیوم بی‌سی پلیس", "🏟️ استادیوم لیوایز", "🏟️ استادیوم لینکلن فایننشال"
+]
+REFEREES = ["مایکل اولیور", "کلمنت تورپن", "دنی ماکلی", "دنیله اورساتو", "آنتونیو ماتئو لاهوز"]
+WEATHERS = ["☀️ صاف", "🌤️ نیمه‌ابری", "☁️ ابری", "🌧️ بارانی", "💨 باد شدید"]
+FORMATIONS = {
+    "4-3-3": {"GK":1,"DF":4,"MF":3,"FW":3},
+    "4-4-2": {"GK":1,"DF":4,"MF":4,"FW":2},
+    "4-2-3-1": {"GK":1,"DF":4,"MF":5,"FW":1},
+    "3-5-2": {"GK":1,"DF":3,"MF":5,"FW":2},
+    "5-3-2": {"GK":1,"DF":5,"MF":3,"FW":2},
+}
+MENTALITIES = {"defensive": "🛡️ دفاعی", "balanced": "⚖️ متعادل", "attacking": "🔥 هجومی"}
+PRESSING = {"low":"کم", "medium":"متوسط", "high":"زیاد"}
+PASSING = {"short":"کوتاه", "mixed":"ترکیبی", "direct":"مستقیم"}
 
 
-# شانس نسبی هر پست برای پاس گل دادن (پلی‌میکر و هافبک‌ها بیشتر از همه)
-ASSIST_SCORE_WEIGHT = {"GK": 0, "DF": 1, "MF": 3, "FW": 2}
-ASSIST_CHANCE = 0.55  # احتمال اینکه یه گل روی پاس گل کسی زده بشه (نه گل تنهایی)
+def ensure_match_system():
+    with db() as c:
+        # SQLite migration for older clean DBs.
+        cols = {r[1] for r in c.execute("PRAGMA table_info(matches)").fetchall()}
+        for col, typ in [("stadium","TEXT"),("referee","TEXT"),("weather","TEXT"),("attendance","INTEGER"),("mvp_player_id","INTEGER"),("possession_a","INTEGER"),("shots_a","INTEGER"),("shots_b","INTEGER"),("corners_a","INTEGER"),("corners_b","INTEGER"),("penalties_a","INTEGER"),("penalties_b","INTEGER"),("sot_a","INTEGER"),("sot_b","INTEGER")]:
+            if col not in cols:
+                c.execute(f"ALTER TABLE matches ADD COLUMN {col} {typ}")
+        c.execute("CREATE TABLE IF NOT EXISTS team_settings(team_code TEXT PRIMARY KEY, formation TEXT DEFAULT '4-3-3', mentality TEXT DEFAULT 'balanced', pressing TEXT DEFAULT 'medium', passing TEXT DEFAULT 'mixed', captain_id INTEGER, penalty_taker_id INTEGER, free_kick_id INTEGER, corner_taker_id INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS lineups(team_code TEXT PRIMARY KEY, player_ids TEXT NOT NULL DEFAULT '', bench_ids TEXT NOT NULL DEFAULT '')")
+        c.execute("CREATE TABLE IF NOT EXISTS player_match_stats(id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER NOT NULL, player_id INTEGER NOT NULL, minutes INTEGER DEFAULT 90, rating REAL DEFAULT 6.0, goals INTEGER DEFAULT 0, assists INTEGER DEFAULT 0, shots INTEGER DEFAULT 0, shots_on_target INTEGER DEFAULT 0, passes INTEGER DEFAULT 0, tackles INTEGER DEFAULT 0, yellow INTEGER DEFAULT 0, red INTEGER DEFAULT 0, clean_sheet INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS match_events(id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER NOT NULL, minute INTEGER NOT NULL, event_type TEXT NOT NULL, team_code TEXT, player_id INTEGER, related_player_id INTEGER, detail TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS player_tournament_stats(player_id INTEGER PRIMARY KEY, appearances INTEGER DEFAULT 0, goals INTEGER DEFAULT 0, assists INTEGER DEFAULT 0, yellow INTEGER DEFAULT 0, red INTEGER DEFAULT 0, mvp INTEGER DEFAULT 0, clean_sheets INTEGER DEFAULT 0, rating_sum REAL DEFAULT 0)")
+        pcols = {r[1] for r in c.execute("PRAGMA table_info(world_cup_players)").fetchall()}
+        for col, typ, default in [("speed","REAL","70"),("shooting","REAL","70"),("passing","REAL","70"),("defending","REAL","70"),("stamina","REAL","70"),("fatigue","REAL","0"),("form","REAL","0"),("injury_until","INTEGER","0"),("suspension","INTEGER","0")]:
+            if col not in pcols:
+                c.execute(f"ALTER TABLE world_cup_players ADD COLUMN {col} {typ} DEFAULT {default}")
 
 
-def _weighted_pick(weighted_pairs):
-    if not weighted_pairs:
-        return None
-    total = sum(w for _, w in weighted_pairs)
-    r = random.uniform(0, total)
-    upto = 0
-    for p, w in weighted_pairs:
-        upto += w
-        if upto >= r:
-            return p
-    return weighted_pairs[-1][0]
+def _ids_csv(ids):
+    return ",".join(str(x) for x in ids)
 
 
-def pick_scorer(players):
-    """یه گلزن از بین بازیکن‌های بازی‌کننده انتخاب می‌کنه: دروازه‌بان هیچ‌وقت انتخاب نمی‌شه،
-    مهاجم بیشترین شانس رو داره، بعد هافبک، بعد مدافع. بازیکن‌های قوی‌تر هم شانس بیشتری دارن."""
-    weighted = [
-        (p, POSITION_SCORE_WEIGHT.get(p["position"], 0) * (p["power"] + 1))
-        for p in players
-    ]
-    weighted = [(p, w) for p, w in weighted if w > 0]
-    return _weighted_pick(weighted)
+def _parse_ids(value):
+    return [int(x) for x in str(value or "").split(",") if x.strip().isdigit()]
 
 
-def pick_assister(players, exclude_player_id):
-    weighted = [
-        (p, ASSIST_SCORE_WEIGHT.get(p["position"], 0) * (p["power"] + 1))
-        for p in players if p["player_id"] != exclude_player_id
-    ]
-    weighted = [(p, w) for p, w in weighted if w > 0]
-    return _weighted_pick(weighted)
+def team_settings(code):
+    ensure_match_system()
+    with db() as c:
+        c.execute("INSERT OR IGNORE INTO team_settings(team_code) VALUES(?)", (code,))
+        return c.execute("SELECT * FROM team_settings WHERE team_code=?", (code,)).fetchone()
 
 
-def build_match_events(team_a_players, team_b_players, goals_a, goals_b):
-    """برای هر گل یه گلزن (و شاید یه پاس‌گل‌دهنده) و یه دقیقه‌ی تصادفی می‌سازه"""
-    events = []
-    for _ in range(goals_a):
-        scorer = pick_scorer(team_a_players)
-        assister = pick_assister(team_a_players, scorer["player_id"]) if scorer and random.random() < ASSIST_CHANCE else None
-        events.append({"minute": random.randint(1, 90), "side": "a", "scorer": scorer, "assister": assister})
-    for _ in range(goals_b):
-        scorer = pick_scorer(team_b_players)
-        assister = pick_assister(team_b_players, scorer["player_id"]) if scorer and random.random() < ASSIST_CHANCE else None
-        events.append({"minute": random.randint(1, 90), "side": "b", "scorer": scorer, "assister": assister})
-    events.sort(key=lambda e: e["minute"])
-    return events
-
-
-def format_match_events(events) -> str:
-    if not events:
-        return ""
-    lines = []
-    for e in events:
-        arrow = "⬅️" if e["side"] == "a" else "➡️"
-        scorer_name = e["scorer"]["name"] if e["scorer"] else "نامشخص"
-        line = f"{e['minute']}' {arrow} {scorer_name}"
-        if e["assister"]:
-            line += f" (پاس گل: {e['assister']['name']})"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def compute_match_scores(players, events, side, conceded_goals):
-    """امتیاز هر بازیکن توی این بازی رو حساب می‌کنه: گل=۴، پاس‌گل=۲، حضور=۱، کلین‌شیت برای مدافع/دروازه‌بان=۲"""
-    scores = {p["player_id"]: 1.0 for p in players}  # امتیاز حضور
-    for e in events:
-        if e["side"] != side:
-            continue
-        if e["scorer"]:
-            scores[e["scorer"]["player_id"]] = scores.get(e["scorer"]["player_id"], 0) + 4
-        if e["assister"]:
-            scores[e["assister"]["player_id"]] = scores.get(e["assister"]["player_id"], 0) + 2
-    if conceded_goals == 0:
-        for p in players:
-            if p["position"] in ("GK", "DF"):
-                scores[p["player_id"]] = scores.get(p["player_id"], 0) + 2
-    return scores
-
-
-def apply_match_scores(user_id: int, scores: dict):
-    with get_conn() as conn:
-        for player_id, pts in scores.items():
-            conn.execute(
-                "UPDATE user_players SET season_points = season_points + ? WHERE user_id = ? AND player_id = ?",
-                (pts, user_id, player_id),
-            )
-
-
-def record_battle_result(winner_id: int, loser_id: int, is_draw: bool = False):
-    with get_conn() as conn:
-        if is_draw:
-            conn.execute(
-                "UPDATE users SET draws = draws + 1, total_points = total_points + ? WHERE user_id IN (?, ?)",
-                (DRAW_POINTS, winner_id, loser_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE users SET wins = wins + 1, total_points = total_points + ? WHERE user_id = ?",
-                (WIN_POINTS, winner_id),
-            )
-            conn.execute("UPDATE users SET losses = losses + 1 WHERE user_id = ?", (loser_id,))
-
-
-def get_leaderboard(limit: int = 10):
-    """جدول لیگ رو برمی‌گردونه — فقط شامل کاربرایی که الان واقعاً تیم معتبر و کامل دارن،
-    و رتبه‌بندی بر اساس میانگین امتیاز هر بازی (Points Per Game) نه مجموع امتیاز؛ اینجوری تیمی
-    که وسط فصل اومده و بازی کمتری داشته، به‌خاطر تعداد بازی کم ناعادلانه ته جدول نمی‌مونه."""
-    eligible_ids = get_all_matchday_eligible_users()
-    if not eligible_ids:
-        return []
-    with get_conn() as conn:
-        c = conn.cursor()
-        placeholders = ",".join("?" * len(eligible_ids))
-        c.execute(
-            f"SELECT user_id, username, team_name, kit_color1, kit_color2, "
-            f"total_points, wins, draws, losses FROM users "
-            f"WHERE user_id IN ({placeholders})",
-            eligible_ids,
-        )
-        rows = c.fetchall()
-
-    def games_played(row):
-        return (row["wins"] or 0) + (row["draws"] or 0) + (row["losses"] or 0)
-
-    def ppg(row):
-        games = games_played(row)
-        return (row["total_points"] / games) if games > 0 else 0.0
-
-    rows_sorted = sorted(rows, key=lambda r: (ppg(r), r["total_points"]), reverse=True)
-    return rows_sorted[:limit]
-
-
-def _normalize_pair(user_a: int, user_b: int):
-    return (user_a, user_b) if user_a < user_b else (user_b, user_a)
-
-
-MAX_LEGS_PER_PAIR = 2  # هر جفت تیم رفت و برگشت (۲ بار) با هم بازی می‌کنن
-
-
-def get_fixture_legs(user_a: int, user_b: int) -> int:
-    a, b = _normalize_pair(user_a, user_b)
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT legs_played FROM fixtures WHERE user_a = ? AND user_b = ?", (a, b))
-        row = c.fetchone()
-        return row["legs_played"] if row else 0
-
-
-def has_played_fixture(user_a: int, user_b: int) -> bool:
-    """آیا این جفت تیم رفت و برگشت (هر دو بازی) رو کامل انجام دادن؟"""
-    return get_fixture_legs(user_a, user_b) >= MAX_LEGS_PER_PAIR
-
-
-def record_fixture(user_a: int, user_b: int):
-    a, b = _normalize_pair(user_a, user_b)
-    with get_conn() as conn:
-        conn.execute("""
-            INSERT INTO fixtures (user_a, user_b, legs_played) VALUES (?, ?, 1)
-            ON CONFLICT(user_a, user_b) DO UPDATE SET legs_played = legs_played + 1
-        """, (a, b))
-
-
-def reset_fixtures():
-    with get_conn() as conn:
-        conn.execute("DELETE FROM fixtures")
-
-
-def is_season_complete() -> bool:
-    """آیا همه‌ی تیم‌های آماده، رفت و برگشت (هر دو بازی) رو با هم انجام دادن؟"""
-    eligible = get_matchday_eligible_users()
-    if len(eligible) < 2:
+def set_team_setting(code, field, value):
+    if field not in {"formation","mentality","pressing","passing"}:
         return False
-    for i in range(len(eligible)):
-        for j in range(i + 1, len(eligible)):
-            if get_fixture_legs(eligible[i], eligible[j]) < MAX_LEGS_PER_PAIR:
-                return False
+    ensure_match_system()
+    with db() as c:
+        c.execute("INSERT OR IGNORE INTO team_settings(team_code) VALUES(?)", (code,))
+        c.execute(f"UPDATE team_settings SET {field}=? WHERE team_code=?", (value, code))
     return True
 
 
-def reset_league():
-    """امتیاز کل، برد/باخت/مساوی همه کاربرا رو صفر می‌کنه و تاریخچه‌ی بازی‌های قبلی (fixtures) هم
-    پاک می‌شه، یعنی انگار یه فصل تازه شروع شده و همه دوباره باید با همه بازی کنن"""
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET total_points = 0, wins = 0, draws = 0, losses = 0")
-    reset_fixtures()
+def get_lineup(code):
+    ensure_match_system()
+    rows=team_player_list(code)
+    setting=team_settings(code)
+    with db() as c:
+        row=c.execute("SELECT * FROM lineups WHERE team_code=?",(code,)).fetchone()
+    if row:
+        ids=_parse_ids(row["player_ids"])
+        selected=[p for p in rows if p["player_id"] in ids]
+    else:
+        selected=[]
+    # If no valid lineup exists, create a legal automatic lineup.
+    if len(selected) != 11:
+        req=FORMATIONS.get(setting["formation"],FORMATIONS["4-3-3"])
+        selected=[]
+        used=set()
+        for pos,n in req.items():
+            for p in rows:
+                if p["player_id"] not in used and ((pos=="GK" and p["position"]=="GK") or (pos=="DF" and p["position"]=="DF") or (pos=="MF" and p["position"]=="MF") or (pos=="FW" and p["position"]=="FW")):
+                    selected.append(p); used.add(p["player_id"])
+                    if sum(1 for x in selected if x["position"]==pos)==n: break
+        selected=selected[:11]
+        with db() as c:
+            c.execute("INSERT OR REPLACE INTO lineups(team_code,player_ids,bench_ids) VALUES(?,?,?)",(code,_ids_csv([p["player_id"] for p in selected]),_ids_csv([p["player_id"] for p in rows if p["player_id"] not in {x["player_id"] for x in selected}])))
+    return selected
 
 
-def remove_all_players():
-    """همه‌ی بازیکن‌ها رو کاملاً از بازی حذف می‌کنه (هم از فروشگاه، هم از تیم همه کاربرا)"""
-    with get_conn() as conn:
-        conn.execute("DELETE FROM user_players")
-        conn.execute("DELETE FROM players")
-        try:
-            conn.execute("DELETE FROM sqlite_sequence WHERE name = 'players'")
-        except sqlite3.OperationalError:
-            pass
-
-
-def clear_user_team(user_id: int):
-    """تیم یه کاربر خاص رو کاملاً خالی می‌کنه و بودجه‌ش رو به مقدار اولیه برمی‌گردونه
-    تا بتونه از صفر یه تیم جدید بسازه (بازیکن‌ها توی فروشگاه دست‌نخورده می‌مونن)"""
-    with get_conn() as conn:
-        conn.execute("DELETE FROM user_players WHERE user_id = ?", (user_id,))
-        conn.execute("UPDATE users SET budget = ? WHERE user_id = ?", (INITIAL_BUDGET, user_id))
-
-
-def clear_all_teams():
-    """تیم همه‌ی کاربرا رو کاملاً خالی می‌کنه و بودجه‌ی همه رو به مقدار اولیه برمی‌گردونه
-    (بازیکن‌ها توی فروشگاه می‌مونن، هرکس می‌تونه از نو تیم بسازه)"""
-    with get_conn() as conn:
-        conn.execute("DELETE FROM user_players")
-        conn.execute("UPDATE users SET budget = ?", (INITIAL_BUDGET,))
-
-
-def find_user_by_username(username: str):
-    """جستجوی کاربر با یوزرنیم (بدون @) برای دستورات ادمین"""
-    username = username.lstrip("@")
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE username = ?", (username,))
-        return c.fetchone()
-
-
-def get_news() -> str:
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT content FROM news WHERE id = 1")
-        row = c.fetchone()
-        return row["content"] if row else ""
-
-
-def set_news(content: str):
-    with get_conn() as conn:
-        conn.execute("UPDATE news SET content = ? WHERE id = 1", (content,))
-
-
-# ================== ربات ==================
-
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
-
-POSITION_FA = {"GK": "دروازه‌بان", "DF": "مدافع", "MF": "هافبک", "FW": "مهاجم"}
-
-# شانس نسبی هر پست برای گلزنی: دروازه‌بان اصلاً گل نمی‌زنه، مهاجم از همه بیشتر
-POSITION_SCORE_WEIGHT = {"GK": 0, "DF": 1, "MF": 2, "FW": 4}
-
-# پالت رنگ‌های قابل انتخاب برای پیراهن تیم (کلید، اسم فارسی، ایموجی)
-KIT_COLORS = [
-    ("red", "قرمز", "🔴"),
-    ("blue", "آبی", "🔵"),
-    ("green", "سبز", "🟢"),
-    ("yellow", "زرد", "🟡"),
-    ("black", "مشکی", "⚫"),
-    ("white", "سفید", "⚪"),
-    ("orange", "نارنجی", "🟠"),
-    ("purple", "بنفش", "🟣"),
-]
-KIT_COLOR_MAP = {key: (label, emoji) for key, label, emoji in KIT_COLORS}
-
-# لیست اسپانسرهای قابل انتخاب برای باشگاه (کلید، اسم، ایموجی)
-SPONSORS = [
-    ("digikala", "دیجی‌کالا", "🛒"),
-    ("snapp", "اسنپ", "🚕"),
-    ("irancell", "ایرانسل", "📱"),
-    ("tapsi", "تپسی", "🚖"),
-    ("bank_melli", "بانک ملی", "🏦"),
-    ("golrang", "گلرنگ", "🧴"),
-    ("mihan", "میهن", "🥛"),
-    ("zarrin", "زرین", "🍫"),
-]
-SPONSOR_MAP = {key: (label, emoji) for key, label, emoji in SPONSORS}
-
-# پک‌های قابل خرید با فوت توکن. هر بازیکن با (نام, تیم, پست, قیمت, قدرت) مشخص شده —
-# دقیقاً همون مشخصاتی که قبلاً برای این بازیکن‌ها تعیین شده بود.
-PACKS = {
-    "standard": {
-        "label": "🥉 پک معمولی",
-        "cost": 50,
-        "players": [
-            ("مالدینی", "میلان", "DF", 2000, 20),
-            ("بوفون", "یوونتوس", "GK", 2000, 20),
-        ],
-        "bonus_budget": 0,
-    },
-    "advanced": {
-        "label": "🥈 پک پیشرفته",
-        "cost": 70,
-        "players": [
-            ("مودریچ", "رئال مادرید", "MF", 2000, 20),
-            ("نیمار", "بارسلونا", "FW", 2000, 25),
-        ],
-        "bonus_budget": 0,
-    },
-    "semi_special": {
-        "label": "🥇 پک نیمه ویژه",
-        "cost": 100,
-        "players": [
-            ("مسی", "بارسلونا", "FW", 2000, 30),
-            ("رونالدو", "رئال مادرید", "FW", 2000, 30),
-            ("نیمار", "بارسلونا", "FW", 2000, 25),
-        ],
-        "bonus_budget": 50,
-    },
-    "special": {
-        "label": "💎 پک ویژه",
-        "cost": 150,  # ⚠️ قیمتش رو نگفته بودی؛ فرض کردم ۱۵۰، بگو اگه چیز دیگه‌ای مدنظرت بود
-        "players": [
-            ("مسی", "بارسلونا", "FW", 2000, 30),
-            ("رونالدو", "رئال مادرید", "FW", 2000, 30),
-            ("نیمار", "بارسلونا", "FW", 2000, 25),
-            ("مودریچ", "رئال مادرید", "MF", 2000, 20),
-            ("بوفون", "یوونتوس", "GK", 2000, 20),
-            ("مالدینی", "میلان", "DF", 2000, 20),
-        ],
-        "bonus_budget": 100,
-    },
-}
-
-# حداقل تعداد لازم از هر پست برای اینکه تیم اجازه بازی داشته باشه
-REQUIRED_POSITION_COUNTS = {"GK": 1, "DF": 4, "MF": 4, "FW": 3}
-
-
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
-
-
-# ---------- دستورات عمومی ----------
-
-def main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton("📋 لیست بازیکنان", callback_data="menu_players"),
-            InlineKeyboardButton("👥 تیم من", callback_data="menu_myteam"),
-        ],
-        [
-            InlineKeyboardButton("🏷 تیم و رنگ من", callback_data="menu_team_setup"),
-            InlineKeyboardButton("🌱 آکادمی", callback_data="menu_academy"),
-        ],
-        [
-            InlineKeyboardButton("🎁 پک‌ها", callback_data="menu_packs"),
-            InlineKeyboardButton("🧩 ترکیب و تاکتیک", callback_data="menu_lineup_tactics"),
-        ],
-        [
-            InlineKeyboardButton("🏟 ورزشگاه من", callback_data="menu_stadium"),
-        ],
-        [
-            InlineKeyboardButton("🤝 اسپانسر تیم", callback_data="menu_sponsor"),
-            InlineKeyboardButton("⚽ بازی دوستانه", callback_data="menu_friendly"),
-        ],
-        [InlineKeyboardButton("⚔️ وضعیت بازی‌ها", callback_data="menu_battle")],
-        [
-            InlineKeyboardButton("💰 بودجه من", callback_data="menu_budget"),
-            InlineKeyboardButton("📊 آمار من", callback_data="menu_mystats"),
-        ],
-        [InlineKeyboardButton("🏅 جدول لیگ", callback_data="menu_league")],
-        [
-            InlineKeyboardButton("📰 اخبار", callback_data="menu_news"),
-            InlineKeyboardButton("📢 بیانیه", callback_data="menu_statement"),
-        ],
-    ]
-    if is_admin(user_id):
-        rows.append([InlineKeyboardButton("🛠 پنل ادمین", callback_data="menu_admin")])
-    return InlineKeyboardMarkup(rows)
-
-
-def admin_menu_keyboard() -> InlineKeyboardMarkup:
-    bot_on = is_bot_enabled()
-    toggle_label = "🔴 خاموش کردن ربات" if bot_on else "🟢 روشن کردن ربات"
-    rows = [
-        [InlineKeyboardButton(toggle_label, callback_data="admin_toggle_bot")],
-        [InlineKeyboardButton("🎮 شروع بازی‌های امروز", callback_data="admin_matchday")],
-        [
-            InlineKeyboardButton("🚀 شروع فصل خودکار (هر ۵ ساعت)", callback_data="admin_start_auto_season"),
-        ],
-        [
-            InlineKeyboardButton("⏹ توقف فصل خودکار", callback_data="admin_stop_auto_season"),
-        ],
-        [
-            InlineKeyboardButton("💵 افزودن بودجه", callback_data="admin_give_budget"),
-            InlineKeyboardButton("🎟 افزودن فوت توکن", callback_data="admin_give_tokens"),
-        ],
-        [InlineKeyboardButton("📰 تنظیم خبر", callback_data="admin_set_news")],
-        [
-            InlineKeyboardButton("⚽ افزودن بازیکن", callback_data="admin_add_player"),
-            InlineKeyboardButton("🗑 حذف بازیکن", callback_data="admin_remove_player"),
-        ],
-        [
-            InlineKeyboardButton("✅ ثبت امتیاز بازیکن", callback_data="admin_set_points"),
-            InlineKeyboardButton("⚡ تنظیم قدرت بازیکن", callback_data="admin_set_power"),
-        ],
-        [InlineKeyboardButton("♻️ ریست جدول لیگ", callback_data="admin_reset_league")],
-        [InlineKeyboardButton("✏️ ویرایش تیم یک کاربر", callback_data="admin_edit_team")],
-        [
-            InlineKeyboardButton("🗑 خالی کردن تیم یک کاربر", callback_data="admin_clear_team"),
-            InlineKeyboardButton("💥 خالی کردن همه‌ی تیم‌ها", callback_data="admin_clear_all_teams"),
-        ],
-        [InlineKeyboardButton("🗑 حذف همه‌ی بازیکنان از فروشگاه", callback_data="admin_remove_all_players")],
-        [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="admin_back")],
-    ]
-    return InlineKeyboardMarkup(rows)
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    get_or_create_user(user.id, user.username or user.first_name)
-    text = (
-        f"سلام {user.first_name}! 👋\n\n"
-        "به بازی فانتزی فوتبال خوش اومدی ⚽️\n\n"
-        f"با بودجه اولیه‌ات یک تیم بین {MIN_TEAM_SIZE} تا {MAX_TEAM_SIZE} نفره بساز.\n\n"
-        "از دکمه‌های زیر استفاده کن 👇"
-    )
-    await update.message.reply_text(text, reply_markup=main_menu_keyboard(user.id))
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start(update, context)
-
-
-async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """برای اینکه بفهمی آیدی عددیت چیه و بذاریش توی ADMIN_IDS"""
-    user = update.effective_user
-    await update.message.reply_text(f"آیدی عددی تو: {user.id}")
-
-
-def render_budget(user_id: int) -> str:
-    b = get_user_budget(user_id)
-    tokens = get_user_foot_tokens(user_id)
-    return f"💰 بودجه باقی‌مانده تو: {b:.1f} میلیون تومان\n🎟 فوت توکن: {tokens}"
-
-
-async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    await update.message.reply_text(render_budget(user_id))
-
-
-def render_players_messages(user_id: int):
-    players = get_all_players()
-    if not players:
-        return [("هنوز بازیکنی در سیستم ثبت نشده.", None)]
-
-    grouped = {}
+def lineup_strength(code):
+    players=get_lineup(code)
+    if not players: return get_power(code)
+    vals=[]
     for p in players:
-        grouped.setdefault(p["position"], []).append(p)
-
-    messages = []
-    for pos, plist in grouped.items():
-        lines = [f"⚽️ {POSITION_FA.get(pos, pos)}:"]
-        buttons = []
-        for p in plist:
-            owned = "✅" if is_player_in_team(user_id, p["player_id"]) else ""
-            lines.append(f"#{p['player_id']} | {p['name']} ({p['team']}) - قیمت: {p['price']} م.ت | قدرت: {p['power']:.0f} {owned}")
-            if not owned:
-                buttons.append([
-                    InlineKeyboardButton(
-                        f"خرید {p['name']} ({p['price']}م)",
-                        callback_data=f"buy_{p['player_id']}",
-                    )
-                ])
-        keyboard = InlineKeyboardMarkup(buttons) if buttons else None
-        messages.append(("\n".join(lines), keyboard))
-    return messages
+        core=float(p["power"])+float(p["training_power"])
+        technical=(float(p["passing"])+float(p["stamina"])+float(p["speed"])+float(p["shooting"])+float(p["defending"]))/5
+        pos_bonus=(float(p["shooting"])-70)*0.08 if p["position"]=="FW" else (float(p["passing"])-70)*0.07 if p["position"]=="MF" else (float(p["defending"])-70)*0.08 if p["position"]=="DF" else (float(p["defending"])-70)*0.05
+        vals.append(core*0.65+technical*0.35+pos_bonus+float(p["form"] or 0)*0.7-float(p["fatigue"] or 0)*0.06)
+    s=sum(vals)/len(vals)
+    st=team_settings(code)
+    mentality_bonus={"defensive":-1.0,"balanced":0.0,"attacking":1.0}.get(st["mentality"],0)
+    return s+mentality_bonus
 
 
-async def players_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    for text, keyboard in render_players_messages(user_id):
-        await update.message.reply_text(text, reply_markup=keyboard)
+def _goal_contributors(players, goals):
+    if not players or goals<=0: return []
+    attackers=[p for p in players if p["position"] in ("FW","MF")] or list(players)
+    out=[]
+    for _ in range(goals):
+        scorer=random.choice(attackers)
+        assister=random.choice([p for p in players if p["player_id"]!=scorer["player_id"]]) if len(players)>1 else None
+        out.append((scorer,assister))
+    return out
 
 
-async def buy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    player_id = int(query.data.split("_")[1])
-
-    player = get_player(player_id)
-    if not player:
-        await query.message.reply_text("این بازیکن پیدا نشد.")
-        return
-
-    if is_player_in_team(user_id, player_id):
-        await query.message.reply_text("این بازیکن از قبل توی تیم توئه.")
-        return
-
-    team_size = get_user_team_size(user_id)
-    if team_size >= MAX_TEAM_SIZE:
-        await query.message.reply_text(f"تیم تو پره! حداکثر {MAX_TEAM_SIZE} بازیکن.")
-        return
-
-    b = get_user_budget(user_id)
-    if b < player["price"]:
-        await query.message.reply_text(
-            f"بودجه کافی نداری! قیمت بازیکن: {player['price']} م.ت، بودجه تو: {b:.1f} م.ت"
-        )
-        return
-
-    add_player_to_team(user_id, player_id)
-    update_user_budget(user_id, b - player["price"])
-    await query.message.reply_text(
-        f"✅ {player['name']} به تیمت اضافه شد!\nبودجه باقی‌مانده: {b - player['price']:.1f} م.ت"
-    )
+def _active_players(code):
+    return [p for p in get_lineup(code) if int(p["injury_until"] or 0) <= 0 and int(p["suspension"] or 0) <= 0]
 
 
-def render_myteam(user_id: int):
-    team = get_user_team(user_id)
-    if not team:
-        return None
+def _choose_player(players, positions=None, weighted=False):
+    pool=[p for p in players if not positions or p["position"] in positions] or list(players)
+    if not pool: return None
+    if weighted:
+        weights=[max(1.0,float(p["power"])+float(p["training_power"])+float(p["form"] or 0)) for p in pool]
+        return random.choices(pool,weights=weights,k=1)[0]
+    return random.choice(pool)
 
-    row = get_user_row(user_id)
-    tactic = TACTICS[get_user_tactic(user_id)]
-    formation = row["formation"] if row["formation"] in FORMATIONS else "انتخاب نشده"
-    lineup_ids = {p["player_id"] for p in get_user_lineup(user_id)}
-    lineup_status = "کامل ✅" if is_lineup_complete(user_id) else "چیده‌نشده/ناقص ⚠️"
 
-    lines = [
-        f"🏆 تیم من: {team_display_name(row)}",
-        f"🧩 آرایش: {formation} ({lineup_status})",
-        f"🎯 تاکتیک: {tactic['emoji']} {tactic['label']}",
-        f"🏟 ورزشگاه: سطح {row['stadium_level'] or 1} | 👥 هواداران: {row['fans'] or 0}\n",
+def _match_goal_events(code, players, goals, minute_start=1):
+    events=[]
+    attackers=[p for p in players if p["position"] in ("FW","MF")] or players
+    for _ in range(goals):
+        minute=random.randint(max(1,minute_start),90)
+        scorer=_choose_player(attackers,weighted=True)
+        assister=_choose_player([p for p in players if p["player_id"]!=scorer["player_id"] and p["position"] in ("MF","FW")],weighted=True)
+        events.append({"minute":minute,"type":"goal","team":code,"player":scorer,"related":assister,
+                       "detail":f"⚽ گل! {scorer['player_name']}" + (f" | 🅰️ پاس گل: {assister['player_name']}" if assister else "")})
+    return events
+
+
+def simulate_match(code_a, code_b, knockout=False):
+    ensure_match_system()
+    pa,pb=lineup_strength(code_a),lineup_strength(code_b)
+    sa,sb=team_settings(code_a),team_settings(code_b)
+    ax=1.18+(pa-pb)*0.045; bx=1.18+(pb-pa)*0.045
+    mentality={"defensive":-.16,"balanced":0,"attacking":.18}
+    press={"low":-.04,"medium":.04,"high":.10}
+    passing={"short":.05,"mixed":0,"direct":.04}
+    ax+=mentality.get(sa["mentality"],0)+press.get(sa["pressing"],0)+passing.get(sa["passing"],0)
+    bx+=mentality.get(sb["mentality"],0)+press.get(sb["pressing"],0)+passing.get(sb["passing"],0)
+    # فرم و خستگی تیمی
+    for code,ref in ((code_a,"ax"),(code_b,"bx")):
+        players=team_player_list(code)
+        if players:
+            avg_form=sum(float(x["form"] or 0) for x in players)/len(players)
+            avg_fat=sum(float(x["fatigue"] or 0) for x in players)/len(players)
+            mod=avg_form*.012-avg_fat*.008
+            if ref=="ax": ax+=mod
+            else: bx+=mod
+    ga,gb=poisson(max(.15,min(3.4,ax+random.uniform(-.18,.18)))),poisson(max(.15,min(3.4,bx+random.uniform(-.18,.18))))
+    players_a=_active_players(code_a); players_b=_active_players(code_b)
+    events=_match_goal_events(code_a,players_a,ga)+_match_goal_events(code_b,players_b,gb)
+    # کارت‌ها، آفساید، مصدومیت و تعویض‌های شبیه‌سازی‌شده
+    for code,players in ((code_a,players_a),(code_b,players_b)):
+        if not players: continue
+        for _ in range(random.randint(0,3)):
+            if random.random()<.82:
+                p=_choose_player(players)
+                events.append({"minute":random.randint(10,88),"type":"yellow","team":code,"player":p,"related":None,"detail":f"🟨 کارت زرد: {p['player_name']}"})
+        if random.random()<.055:
+            p=_choose_player(players)
+            events.append({"minute":random.randint(15,82),"type":"red","team":code,"player":p,"related":None,"detail":f"🟥 اخراج: {p['player_name']}"})
+        if random.random()<.22:
+            p=_choose_player(players)
+            events.append({"minute":random.randint(20,88),"type":"offside","team":code,"player":p,"related":None,"detail":f"🚩 آفساید: {p['player_name']}"})
+        if random.random()<.07:
+            p=_choose_player(players)
+            events.append({"minute":random.randint(20,84),"type":"injury","team":code,"player":p,"related":None,"detail":f"🤕 مصدومیت: {p['player_name']}"})
+        if random.random()<.65 and len(players)>=12:
+            # تعویض فقط وقتی بازیکن ذخیره معتبر وجود داشته باشد
+            bench=[p for p in team_player_list(code) if p["player_id"] not in {x["player_id"] for x in players} and int(p["injury_until"] or 0)<=0 and int(p["suspension"] or 0)<=0]
+            if bench:
+                outp=_choose_player(players); inp=_choose_player(bench)
+                events.append({"minute":random.randint(55,82),"type":"sub","team":code,"player":inp,"related":outp,"detail":f"🔄 تعویض: {outp['player_name']} ⬅️ {inp['player_name']}"})
+    penalty_a=penalty_b=0; winner=code_a if ga>gb else code_b if gb>ga else None
+    if ga==gb and knockout:
+        penalty_a=random.randint(3,5); penalty_b=random.randint(3,5)
+        while penalty_a==penalty_b: penalty_b=random.randint(2,5)
+        winner=code_a if penalty_a>penalty_b else code_b
+        events.append({"minute":120,"type":"penalty_shootout","team":winner,"player":None,"related":None,"detail":f"🎯 ضربات پنالتی: {penalty_a}-{penalty_b} | برنده: {team_name(winner)}"})
+    events.sort(key=lambda e:(e["minute"],0 if e["type"]=="goal" else 1))
+    possession_a=max(25,min(75,round(50+(pa-pb)*.55+random.uniform(-7,7))))
+    shots_a=max(3,ga+random.randint(4,10)); shots_b=max(3,gb+random.randint(4,10))
+    sot_a=max(ga,min(shots_a,ga+random.randint(1,3))); sot_b=max(gb,min(shots_b,gb+random.randint(1,3)))
+    corners_a,corners_b=random.randint(2,9),random.randint(2,9)
+    stadium=random.choice(STADIUMS); referee=random.choice(REFEREES); weather=random.choice(WEATHERS); attendance=random.randint(42000,82000)
+    # MVP بر اساس گل/پاس گل + قدرت فردی
+    candidates=players_a+players_b
+    if candidates:
+        goal_ids={}
+        assist_ids={}
+        for e in events:
+            if e.get("type")=="goal" and e.get("player"):
+                pid=e["player"]["player_id"]; goal_ids[pid]=goal_ids.get(pid,0)+1
+            if e.get("type")=="goal" and e.get("related"):
+                pid=e["related"]["player_id"]; assist_ids[pid]=assist_ids.get(pid,0)+1
+        mvp=max(candidates,key=lambda p: goal_ids.get(p["player_id"],0)*3+assist_ids.get(p["player_id"],0)*2+float(p["power"])+float(p["training_power"])+random.uniform(0,8))
+    else: mvp=None
+    return {"ga":ga,"gb":gb,"winner":winner,"stats":{"possession_a":possession_a,"shots_a":shots_a,"shots_b":shots_b,"sot_a":sot_a,"sot_b":sot_b,"corners_a":corners_a,"corners_b":corners_b,"stadium":stadium,"referee":referee,"weather":weather,"attendance":attendance,"events":events,"mvp":mvp,"penalty_a":penalty_a,"penalty_b":penalty_b}}
+
+
+def add_match_event(match_id, minute, event_type, team_code=None, player_id=None, related_player_id=None, detail=""):
+    ensure_match_system()
+    with db() as c:
+        c.execute("INSERT INTO match_events(match_id,minute,event_type,team_code,player_id,related_player_id,detail) VALUES(?,?,?,?,?,?,?)", (match_id,minute,event_type,team_code,player_id,related_player_id,detail))
+
+
+def update_tournament_player_stats(player_id, rating, goals, assists, yellow, red, clean_sheet, is_mvp):
+    with db() as c:
+        c.execute("INSERT OR IGNORE INTO player_tournament_stats(player_id) VALUES(?)", (player_id,))
+        c.execute("UPDATE player_tournament_stats SET appearances=appearances+1,goals=goals+?,assists=assists+?,yellow=yellow+?,red=red+?,mvp=mvp+?,clean_sheets=clean_sheets+?,rating_sum=rating_sum+? WHERE player_id=?", (goals,assists,yellow,red,1 if is_mvp else 0,1 if clean_sheet else 0,rating,player_id))
+
+def _event_stat_map(events):
+    stats={}
+    for e in events:
+        p=e.get("player")
+        if not p: continue
+        pid=p["player_id"]; x=stats.setdefault(pid,{"goals":0,"assists":0,"yellow":0,"red":0,"injury":0,"sub_in":0,"sub_out":0})
+        if e["type"]=="goal": x["goals"]+=1
+        elif e["type"]=="yellow": x["yellow"]+=1
+        elif e["type"]=="red": x["red"]+=1
+        elif e["type"]=="injury": x["injury"]+=1
+        elif e["type"]=="sub": x["sub_in"]+=1
+        q=e.get("related")
+        if q:
+            y=stats.setdefault(q["player_id"],{"goals":0,"assists":0,"yellow":0,"red":0,"injury":0,"sub_in":0,"sub_out":0})
+            if e["type"]=="goal": y["assists"]+=1
+            if e["type"]=="sub": y["sub_out"]+=1
+    return stats
+
+
+def save_player_match_stats(match_id, code_a, code_b, ga, gb, mvp, events=None):
+    events=events or []
+    emap=_event_stat_map(events)
+    for code,goals,clean in ((code_a,ga,gb==0),(code_b,gb,ga==0)):
+        players=team_player_list(code)
+        starters={p["player_id"] for p in get_lineup(code)}
+        for p in players:
+            x=emap.get(p["player_id"],{})
+            played=p["player_id"] in starters or x.get("sub_in",0)>0
+            if not played: continue
+            mins=90
+            if x.get("sub_out"): mins=random.randint(55,82)
+            elif x.get("sub_in"): mins=random.randint(10,35)
+            g=x.get("goals",0); a=x.get("assists",0); yellow=x.get("yellow",0); red=x.get("red",0)
+            shots=max(g, random.randint(0,3)+(1 if p["position"] in ("FW","MF") else 0))
+            sot=min(shots,max(g,random.randint(0,2)))
+            passes=random.randint(25,90) if p["position"]!="FW" else random.randint(12,55)
+            tackles=random.randint(0,7) if p["position"]!="GK" else random.randint(0,2)
+            rating=6.1+g*1.15+a*.7+(.25 if clean and p["position"]=="GK" else 0)-yellow*.25-red*.9+random.uniform(-.55,.55)
+            if mvp and p["player_id"]==mvp["player_id"]: rating+=1.0
+            rating=max(4.0,min(10.0,rating))
+            with db() as c:
+                c.execute("INSERT INTO player_match_stats(match_id,player_id,minutes,rating,goals,assists,shots,shots_on_target,passes,tackles,yellow,red,clean_sheet) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(match_id,p["player_id"],mins,round(rating,1),g,a,shots,sot,passes,tackles,yellow,red,1 if clean else 0))
+            update_tournament_player_stats(p["player_id"],round(rating,1),g,a,yellow,red,clean,bool(mvp and p["player_id"]==mvp["player_id"]))
+            # فرم/خستگی بعد از مسابقه
+            delta_form=(g*1.4+a*.8+(.5 if mvp and p["player_id"]==mvp["player_id"] else 0)-yellow*.4-red*1.5+random.uniform(-1.2,1.2))
+            with db() as c:
+                c.execute("UPDATE world_cup_players SET fatigue=MIN(100,MAX(0,COALESCE(fatigue,0)+?)), form=MAX(-10,MIN(10,COALESCE(form,0)+?)), injury_until=CASE WHEN ? > 0 THEN MAX(COALESCE(injury_until,0),?) ELSE COALESCE(injury_until,0) END, suspension=MAX(0,COALESCE(suspension,0)+?) WHERE player_id=?",(min(18,mins/7),delta_form,x.get("injury",0),1 if x.get("injury",0) else 0,red,p["player_id"]))
+
+
+def recover_players():
+    with db() as c:
+        c.execute("UPDATE world_cup_players SET fatigue=MAX(0,COALESCE(fatigue,0)-22), form=COALESCE(form,0)*0.85, injury_until=MAX(0,COALESCE(injury_until,0)-1), suspension=MAX(0,COALESCE(suspension,0)-1)")
+
+
+def play_and_save(code_a, code_b, stage, group=None, knockout=False):
+    result=simulate_match(code_a,code_b,knockout); s=result["stats"]
+    with db() as c:
+        cur=c.execute("INSERT INTO matches(stage,group_name,team_a,team_b,score_a,score_b,winner_code,note,stadium,referee,weather,attendance,mvp_player_id,possession_a,shots_a,shots_b,sot_a,sot_b,corners_a,corners_b,penalties_a,penalties_b) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(stage,group,code_a,code_b,result["ga"],result["gb"],result["winner"],"",s["stadium"],s["referee"],s["weather"],s["attendance"],s["mvp"]["player_id"] if s["mvp"] else None,s["possession_a"],s["shots_a"],s["shots_b"],s["sot_a"],s["sot_b"],s["corners_a"],s["corners_b"],s["penalty_a"],s["penalty_b"]))
+        match_id=cur.lastrowid
+    for e in s["events"]:
+        add_match_event(match_id,e["minute"],e["type"],e.get("team"),e.get("player",{}).get("player_id") if e.get("player") else None,e.get("related",{}).get("player_id") if e.get("related") else None,e.get("detail", ""))
+    save_player_match_stats(match_id,code_a,code_b,result["ga"],result["gb"],s["mvp"],s["events"])
+    if stage.startswith("گروهی"): record_group_match(code_a,code_b,result["ga"],result["gb"])
+    return result["ga"],result["gb"],result["winner"],s,match_id
+
+
+def full_match_report(match_id):
+    with db() as c:
+        m=c.execute("SELECT * FROM matches WHERE match_id=?",(match_id,)).fetchone()
+        rows=c.execute("SELECT p.player_name,p.position,s.rating,s.goals,s.assists,s.shots,s.shots_on_target,s.passes,s.tackles,s.yellow,s.red FROM player_match_stats s JOIN world_cup_players p ON p.player_id=s.player_id WHERE s.match_id=? ORDER BY s.rating DESC",(match_id,)).fetchall()
+        events=c.execute("SELECT minute,event_type,team_code,detail FROM match_events WHERE match_id=? ORDER BY minute,id",(match_id,)).fetchall()
+    if not m: return "گزارش پیدا نشد."
+    a,b=m["team_a"],m["team_b"]
+    lines=["📋 گزارش کامل مسابقه",f"{team_emoji(a)} {team_name(a)} {m['score_a']} - {m['score_b']} {team_name(b)} {team_emoji(b)}",f"🏆 مرحله: {m['stage']}",f"{m['stadium']} | 👨‍⚖️ داور: {m['referee']}",f"{m['weather']} | 👥 تماشاگر: {m['attendance']:,}",f"📊 مالکیت: {m['possession_a']}% - {100-m['possession_a']}%",f"🎯 شوت: {m['shots_a']} - {m['shots_b']}",f"🎯 شوت در چارچوب: {m['sot_a'] or 0} - {m['sot_b'] or 0}",f"🚩 کرنر: {m['corners_a']} - {m['corners_b']}"]
+    if m["penalties_a"] or m["penalties_b"]: lines.append(f"🎯 ضربات پنالتی: {m['penalties_a']} - {m['penalties_b']}")
+    if events:
+        lines.append("\n⏱️ رویدادهای مسابقه:")
+        for e in events: lines.append(f"• دقیقه {e['minute']} — {e['detail']}")
+    if m["mvp_player_id"]:
+        with db() as c: mp=c.execute("SELECT player_name FROM world_cup_players WHERE player_id=?",(m["mvp_player_id"],)).fetchone()
+        if mp: lines.append(f"\n⭐ MVP: {mp['player_name']}")
+    lines.append("\n👤 عملکرد بازیکنان:")
+    for r in rows[:22]:
+        cards=f" | 🟨{r['yellow']} 🟥{r['red']}" if r['yellow'] or r['red'] else ""
+        lines.append(f"• {r['player_name']} ({POSITION_FA[r['position']]}) — ⭐{r['rating']:.1f} | ⚽{r['goals']} | 🅰️{r['assists']} | 🎯{r['shots']}/{r['shots_on_target']} | پاس {r['passes']} | تکل {r['tackles']}{cards}")
+    return "\n".join(lines)
+
+
+def channel_match_highlight(match_id):
+    with db() as c: m=c.execute("SELECT * FROM matches WHERE match_id=?",(match_id,)).fetchone()
+    if not m: return ""
+    with db() as c: p=c.execute("SELECT player_name FROM world_cup_players WHERE player_id=?",(m["mvp_player_id"],)).fetchone() if m["mvp_player_id"] else None
+    return f"⚽ {team_emoji(m['team_a'])} {team_name(m['team_a'])} {m['score_a']} - {m['score_b']} {team_name(m['team_b'])} {team_emoji(m['team_b'])}\n⭐ بهترین بازیکن: {p['player_name'] if p else 'نامشخص'}\n{m['stadium']}"
+
+def record_group_match(code_a, code_b, ga, gb):
+    with db() as c:
+        c.execute("UPDATE standings SET played=played+1,goals_for=goals_for+?,goals_against=goals_against+? WHERE team_code=?", (ga,gb,code_a))
+        c.execute("UPDATE standings SET played=played+1,goals_for=goals_for+?,goals_against=goals_against+? WHERE team_code=?", (gb,ga,code_b))
+        if ga > gb:
+            c.execute("UPDATE standings SET wins=wins+1,points=points+3 WHERE team_code=?", (code_a,))
+            c.execute("UPDATE standings SET losses=losses+1 WHERE team_code=?", (code_b,))
+        elif gb > ga:
+            c.execute("UPDATE standings SET wins=wins+1,points=points+3 WHERE team_code=?", (code_b,))
+            c.execute("UPDATE standings SET losses=losses+1 WHERE team_code=?", (code_a,))
+        else:
+            c.execute("UPDATE standings SET draws=draws+1,points=points+1 WHERE team_code IN (?,?)", (code_a,code_b))
+
+
+def already_played_group(code_a, code_b):
+    with db() as c:
+        row = c.execute("SELECT 1 FROM matches WHERE stage LIKE 'گروهی%' AND ((team_a=? AND team_b=?) OR (team_a=? AND team_b=?))", (code_a,code_b,code_b,code_a)).fetchone()
+        return row is not None
+
+
+def group_table(group):
+    with db() as c:
+        return c.execute("""SELECT nt.*,s.played,s.wins,s.draws,s.losses,s.goals_for,s.goals_against,s.points,
+                   (s.goals_for-s.goals_against) AS gd
+                   FROM national_teams nt JOIN standings s ON s.team_code=nt.team_code
+                   WHERE nt.group_name=? ORDER BY s.points DESC,gd DESC,s.goals_for DESC,nt.team_code""", (group,)).fetchall()
+
+
+def third_place_teams():
+    """برترین ۸ تیم سوم گروه‌ها را بر اساس امتیاز، تفاضل و گل زده برمی‌گرداند."""
+    thirds=[]
+    for g in "ABCDEFGHIJKL":
+        rows=group_table(g)
+        if len(rows) >= 3:
+            r=rows[2]
+            thirds.append(dict(r))
+    thirds.sort(key=lambda r:(r["points"], r["gd"], r["goals_for"], r["team_code"]), reverse=True)
+    return [r["team_code"] for r in thirds[:8]]
+
+
+def all_qualified():
+    qualifiers=[]
+    for g in "ABCDEFGHIJKL":
+        rows=group_table(g)
+        qualifiers.extend([r["team_code"] for r in rows[:2]])
+    qualifiers.extend(third_place_teams())
+    return qualifiers
+
+# ساختار رسمی بازی‌های دور ۳۲ جام جهانی ۲۰۲۶ بر اساس جایگاه گروهی.
+# برای بازی‌هایی که حریف «سوم گروه‌های مشخص» است، تابع زیر از بین تیم‌های سوم
+# واجد شرایط یک تخصیص یکتا و معتبر پیدا می‌کند.
+R32_SLOTS = [
+    ("2A","2B"),
+    ("1E","3:ABCDF"),
+    ("1F","2C"),
+    ("1C","2F"),
+    ("1I","3:CDFGH"),
+    ("2E","2I"),
+    ("1A","3:CEFHI"),
+    ("1L","3:EHIJK"),
+    ("1D","3:BEFIJ"),
+    ("1G","3:AEHIJ"),
+    ("2K","2L"),
+    ("1H","2J"),
+    ("1B","3:EFGIJ"),
+    ("2D","2G"),
+    ("1J","2H"),
+    ("1K","3:DEIJL"),
+]
+
+
+def _group_position_map():
+    out={}
+    for g in "ABCDEFGHIJKL":
+        rows=group_table(g)
+        if len(rows) >= 2:
+            out[f"1{g}"]=rows[0]["team_code"]
+            out[f"2{g}"]=rows[1]["team_code"]
+        if len(rows) >= 3:
+            out[f"3{g}"]=rows[2]["team_code"]
+    return out
+
+
+def _assign_thirds_to_slots(slots, third_codes):
+    """Backtracking تخصیص تیم‌های سوم به اسلات‌های مجاز FIFA-style."""
+    allowed=[]
+    third_groups={f"3{g}":g for g in "ABCDEFGHIJKL" if f"3{g}" in _group_position_map()}
+    for spec in slots:
+        groups=spec.split(":",1)[1]
+        allowed.append([c for c in third_codes if c[1:] in set(groups)])
+    order=sorted(range(len(slots)), key=lambda i: len(allowed[i]))
+    assign={}
+    used=set()
+    def bt(k):
+        if k==len(order): return True
+        i=order[k]
+        for code in allowed[i]:
+            if code in used: continue
+            used.add(code); assign[i]=code
+            if bt(k+1): return True
+            used.remove(code); assign.pop(i,None)
+        return False
+    if not bt(0):
+        raise RuntimeError("تخصیص تیم‌های سوم به اسلات‌های دور ۳۲ ممکن نشد.")
+    return assign
+
+
+def official_r32_pairs():
+    pos=_group_position_map()
+    thirds=third_place_teams()
+    third_specs=[b for a,b in R32_SLOTS if b.startswith("3:")]
+    assigned=_assign_thirds_to_slots(third_specs, thirds)
+    idx=0
+    pairs=[]
+    for a,b in R32_SLOTS:
+        ta=pos.get(a)
+        if b.startswith("3:"):
+            tb=assigned[idx]
+            idx += 1
+        else:
+            tb=pos.get(b)
+        if not ta or not tb:
+            raise RuntimeError(f"اسلات حذفی ناقص است: {a} vs {b}")
+        pairs.append((ta,tb))
+    return pairs
+
+
+def knockout_pairs_from_teams(teams, stage):
+    """تولید جفت‌ها از براکت؛ برای مراحل بعدی ورودی باید به ترتیب براکت باشد."""
+    if len(teams)%2: raise ValueError("تعداد تیم‌ها باید زوج باشد.")
+    return list(zip(teams[0::2], teams[1::2]))
+
+
+def knockout_round(teams, stage):
+    winners=[]; matches=[]
+    for i in range(0,len(teams),2):
+        a,b=teams[i],teams[i+1]
+        ga,gb,w,stats,mid=play_and_save(a,b,stage,None,True)
+        winners.append(w); matches.append(mid)
+    return winners,matches
+
+def run_group_round(round_no):
+    recover_players()
+    results=[]
+    pairs=[]
+    for g in "ABCDEFGHIJKL":
+        rows=group_table(g)
+        codes=[r["team_code"] for r in rows]
+        # گروه‌ها همیشه با ترتیب رسمی ۱-۲، ۱-۳، ۱-۴ در دورهای مختلف می‌چرخند.
+        pairings={1:[(codes[0],codes[1]),(codes[2],codes[3])],2:[(codes[0],codes[2]),(codes[1],codes[3])],3:[(codes[0],codes[3]),(codes[1],codes[2])]}[round_no]
+        # ترتیب codes از جدول ممکن است پس از هر دور تغییر کند؛ برای ثبات، از فهرست رسمی تیم‌ها استفاده می‌کنیم.
+        official=[x[0] for x in WORLD_CUP_TEAMS if x[2]==g]
+        pairings={1:[(official[0],official[1]),(official[2],official[3])],2:[(official[0],official[2]),(official[1],official[3])],3:[(official[0],official[3]),(official[1],official[2])]}[round_no]
+        pairs.extend([(a,b,g) for a,b in pairings])
+    for a,b,g in pairs:
+        if already_played_group(a,b):
+            continue
+        ga,gb,w,stats,mid=play_and_save(a,b,f"گروهی - دور {round_no}",g,False)
+        results.append(f"{team_emoji(a)} {team_name(a)} {ga} - {gb} {team_name(b)} {team_emoji(b)}\n{stats}")
+    return results
+
+def lineup_valid(code, ids):
+    rows=team_player_list(code); by={p["player_id"]:p for p in rows}; selected=[by[i] for i in ids if i in by]
+    st=team_settings(code); req=FORMATIONS.get(st["formation"],FORMATIONS["4-3-3"])
+    if len(selected)!=11: return False,"باید دقیقاً ۱۱ بازیکن انتخاب شود."
+    for pos,n in req.items():
+        if sum(1 for p in selected if p["position"]==pos)!=n: return False,f"برای {st['formation']} باید {n} بازیکن {POSITION_FA[pos]} داشته باشی."
+    bad=[p for p in selected if int(p["injury_until"] or 0)>0 or int(p["suspension"] or 0)>0]
+    if bad: return False,"بازیکن مصدوم/محروم را نمی‌توان در ترکیب گذاشت."
+    return True,selected
+
+
+def save_lineup(code, ids):
+    ok,val=lineup_valid(code,ids)
+    if not ok: return False,val
+    rows=team_player_list(code); bench=[p["player_id"] for p in rows if p["player_id"] not in ids]
+    with db() as c: c.execute("INSERT OR REPLACE INTO lineups(team_code,player_ids,bench_ids) VALUES(?,?,?)",(code,_ids_csv(ids),_ids_csv(bench)))
+    return True,"ترکیب ذخیره شد."
+
+
+def lineup_keyboard(code, selected):
+    rows=team_player_list(code); sel=set(selected); kb=[]
+    for p in rows:
+        mark="✅" if p["player_id"] in sel else "⬜"
+        status=" 🤕" if int(p["injury_until"] or 0)>0 else (" ⛔" if int(p["suspension"] or 0)>0 else "")
+        kb.append([InlineKeyboardButton(f"{mark} {p['player_name']} ({p['position']}){status}",callback_data=f"lu_{p['player_id']}")])
+    kb.append([InlineKeyboardButton("💾 ذخیره ترکیب",callback_data="lu_save"),InlineKeyboardButton("🔄 ترکیب خودکار",callback_data="lu_auto")])
+    return InlineKeyboardMarkup(kb)
+
+
+def player_profile_text(player_id):
+    with db() as c:
+        p=c.execute("SELECT p.*,nt.team_name FROM world_cup_players p JOIN national_teams nt ON nt.team_code=p.team_code WHERE p.player_id=?",(player_id,)).fetchone()
+        st=c.execute("SELECT * FROM player_tournament_stats WHERE player_id=?",(player_id,)).fetchone()
+    if not p: return "❌ بازیکن پیدا نشد."
+    apps=st["appearances"] if st else 0
+    goals=st["goals"] if st else 0
+    assists=st["assists"] if st else 0
+    avg=(st["rating_sum"]/apps) if st and apps else 0
+    return (f"👤 {p['player_name']}\n\n"
+            f"🇺🇳 تیم: {p['team_name']}\n"
+            f"📍 پست: {POSITION_FA.get(p['position'],p['position'])}\n"
+            f"⚡ قدرت: {float(p['power'])+float(p['training_power']):.0f}\n"
+            f"🏃 سرعت: {p['speed']:.0f} | 🎯 شوت: {p['shooting']:.0f}\n"
+            f"🎨 پاس: {p['passing']:.0f} | 🛡️ دفاع: {p['defending']:.0f}\n"
+            f"🔋 استقامت: {p['stamina']:.0f}\n"
+            f"📈 فرم: {p['form']:.1f} | 😮‍💨 خستگی: {p['fatigue']:.1f}\n"
+            f"🤕 مصدومیت: {p['injury_until']} | ⛔ محرومیت: {p['suspension']}\n\n"
+            f"📊 جام: {apps} بازی | ⚽ {goals} گل | 🅰️ {assists} پاس گل | ⭐ {avg:.1f}")
+
+
+def player_status_text(code):
+    lines=[]
+    for p in team_player_list(code):
+        fatigue=float(p["fatigue"] or 0); form=float(p["form"] or 0)
+        status="سالم"
+        if int(p["injury_until"] or 0)>0: status=f"🤕 مصدوم ({p['injury_until']} بازی)"
+        elif int(p["suspension"] or 0)>0: status=f"⛔ محروم ({p['suspension']} بازی)"
+        lines.append(f"{p['player_name']} | خستگی {fatigue:.0f}% | فرم {form:+.1f} | {status}")
+    return "\n".join(lines)
+
+
+def leaderboard_text():
+    with db() as c:
+        rows=c.execute("SELECT p.player_name,nt.team_name,s.appearances,s.goals,s.assists,s.mvp,s.clean_sheets,CASE WHEN s.appearances>0 THEN s.rating_sum/s.appearances ELSE 0 END rating FROM player_tournament_stats s JOIN world_cup_players p ON p.player_id=s.player_id JOIN national_teams nt ON nt.team_code=p.team_code WHERE s.appearances>0 ORDER BY s.goals DESC,s.assists DESC,rating DESC LIMIT 20").fetchall()
+    if not rows: return "📈 هنوز آمار مسابقات ثبت نشده."
+    return "🏅 جدول برترین بازیکنان جام\n\n"+"\n".join(f"{i}. {r['player_name']} ({r['team_name']}) | ⚽{r['goals']} 🅰️{r['assists']} ⭐{r['rating']:.1f} MVP:{r['mvp']}" for i,r in enumerate(rows,1))
+
+
+# ========================= نمایش =========================
+def render_team(uid):
+    t=get_my_team(uid)
+    u=get_user(uid)
+    if not t: return "🇺🇳 هنوز هیچ تیم ملی به تو اختصاص داده نشده."
+    vip="💎 VIP" if t["is_vip"] else ""
+    return (f"🇺🇳 {team_emoji(t['team_code'])} {t['team_name']} {vip}\n"
+            f"👥 گروه: {t['group_name']}\n"
+            f"⚡ قدرت: {get_power(t['team_code']):.1f}\n"
+            f"🏋️ بودجه تمرین: {u['training_budget']:.1f}\n"
+            f"👤 مدیر: {('@'+u['username']) if u['username'] else str(uid)}")
+
+
+def render_players(uid):
+    t=get_my_team(uid)
+    if not t: return "❌ هنوز تیم ملی نداری."
+    rows=team_player_list(t["team_code"])
+    lines=[f"👥 فهرست {t['team_name']} | {len(rows)} بازیکن","", "برای دیدن پروفایل هر بازیکن روی نام او بزن:"]
+    return "\n".join(lines)
+
+
+def render_table(group=None):
+    groups=[group] if group else list("ABCDEFGHIJKL")
+    out=["📊 جدول جام جهانی ۲۰۲۶"]
+    for g in groups:
+        out.append(f"\n🏟 گروه {g}")
+        rows=group_table(g)
+        out.append("تیم | بازی | برد | مساوی | باخت | گل | امتیاز")
+        for r in rows:
+            out.append(f"{team_emoji(r['team_code'])} {r['team_name']} | {r['played']} | {r['wins']} | {r['draws']} | {r['losses']} | {r['goals_for']}:{r['goals_against']} | {r['points']}")
+    return "\n".join(out)
+
+
+def render_results(limit=20):
+    with db() as c:
+        rows=c.execute("SELECT * FROM matches ORDER BY match_id DESC LIMIT ?",(limit,)).fetchall()
+    if not rows: return "📅 هنوز مسابقه‌ای برگزار نشده."
+    lines=["📅 آخرین نتایج جام جهانی",""]
+    for r in rows:
+        lines.append(f"{team_emoji(r['team_a'])} {team_name(r['team_a'])} {r['score_a']} - {r['score_b']} {team_name(r['team_b'])} {team_emoji(r['team_b'])}\n🏆 {r['stage']}")
+    return "\n\n".join(lines)
+
+
+def main_keyboard(uid):
+    rows=[
+        [InlineKeyboardButton("🇺🇳 تیم ملی من",callback_data="wc_my"),InlineKeyboardButton("👥 بازیکنان",callback_data="wc_players")],
+        [InlineKeyboardButton("🏋️ تمرین تیم",callback_data="wc_train"),InlineKeyboardButton("⭐ تمرین بازیکن",callback_data="wc_player_train")],
+        [InlineKeyboardButton("📊 جدول",callback_data="wc_table"),InlineKeyboardButton("📅 نتایج",callback_data="wc_results")],
+        [InlineKeyboardButton("🏆 وضعیت جام",callback_data="wc_status"),InlineKeyboardButton("📰 اخبار",callback_data="wc_news")],
+        [InlineKeyboardButton("📢 بیانیه",callback_data="wc_statement")],
+        [InlineKeyboardButton("🧠 ترکیب و تاکتیک",callback_data="wc_tactics"),InlineKeyboardButton("📈 آمار بازیکنان",callback_data="wc_stats")],[InlineKeyboardButton("🏅 برترین‌های جام",callback_data="wc_leaderboard")],
     ]
-    total_points = 0
-    total_power = 0
-    buttons = []
-    for p in team:
-        injured = p["injury_matches_left"] and p["injury_matches_left"] > 0
-        status_icon = "🚑" if injured else ("🟢" if p["player_id"] in lineup_ids else "")
-        injury_note = f" (مصدوم، {p['injury_matches_left']} بازی مونده)" if injured else ""
-        lines.append(
-            f"{status_icon} #{p['player_id']} | {POSITION_FA.get(p['position'], p['position'])} | {p['name']} ({p['team']}) "
-            f"- قدرت: {p['power']:.0f} | امتیاز فصل: {p['season_points']:.1f}{injury_note}"
-        )
-        total_points += p["season_points"]
-        total_power += p["power"]
-        buttons.append([
-            InlineKeyboardButton(f"⬆️ ارتقا {p['name']}", callback_data=f"upgrade_{p['player_id']}"),
-            InlineKeyboardButton(f"❌ فروش {p['name']}", callback_data=f"sell_{p['player_id']}"),
-        ])
-
-    lines.append(f"\n⚡️ مجموع قدرت تیم: {total_power:.0f}")
-    lines.append(f"🏅 مجموع امتیاز فصل بازیکنان: {total_points:.1f}")
-    lines.append("\n(🟢 = توی ترکیب اصلی، 🚑 = مصدوم)")
-    return "\n".join(lines), InlineKeyboardMarkup(buttons)
-
-
-async def my_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    result = render_myteam(user_id)
-    if result is None:
-        await update.message.reply_text("هنوز تیمی نساختی! با /players یا دکمه «لیست بازیکنان» انتخاب کن.")
-        return
-    text, keyboard = result
-    await update.message.reply_text(text, reply_markup=keyboard)
-
-
-async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    player_id = int(query.data.split("_")[1])
-
-    player = get_player(player_id)
-    if not player or not is_player_in_team(user_id, player_id):
-        await query.message.reply_text("این بازیکن توی تیم تو نیست.")
-        return
-
-    remove_player_from_team(user_id, player_id)
-    b = get_user_budget(user_id)
-    update_user_budget(user_id, b + player["price"])
-    await query.message.reply_text(
-        f"🔻 {player['name']} از تیمت فروخته شد.\nبودجه باقی‌مانده: {b + player['price']:.1f} م.ت"
-    )
-
-
-def get_user_foot_tokens(user_id: int) -> int:
-    row = get_user_row(user_id)
-    return row["foot_tokens"] if row and row["foot_tokens"] is not None else 0
-
-
-def set_user_foot_tokens(user_id: int, amount: int):
-    with get_conn() as conn:
-        conn.execute("UPDATE users SET foot_tokens = ? WHERE user_id = ?", (amount, user_id))
-
-
-def ensure_pack_player(name: str, team: str, position: str, price: float, power: float) -> int:
-    """اگه این بازیکن (با همین اسم و تیم) از قبل توی فروشگاه باشه همون آیدی رو برمی‌گردونه،
-    وگرنه تازه می‌سازتش — اینجوری چند تا پک می‌تونن یه بازیکن مشترک (مثلاً نیمار) داشته باشن"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT player_id FROM players WHERE name = ? AND team = ?", (name, team))
-        row = c.fetchone()
-        if row:
-            return row["player_id"]
-    return add_player(name, team, position, price, power)
-
-
-def packs_keyboard() -> InlineKeyboardMarkup:
-    rows = []
-    for key, pack in PACKS.items():
-        rows.append([InlineKeyboardButton(f"{pack['label']} — {pack['cost']} 🎟", callback_data=f"buypack_{key}")])
+    if is_admin(uid): rows.append([InlineKeyboardButton("⚙️ پنل مدیریت",callback_data="admin_menu")])
     return InlineKeyboardMarkup(rows)
 
 
-def render_packs_text(user_id: int) -> str:
-    tokens = get_user_foot_tokens(user_id)
-    lines = [f"🎟 فوت توکن تو: {tokens}\n"]
-    for pack in PACKS.values():
-        if pack["players"] == "ALL":
-            content = "تمام بازیکنان فروشگاه"
-        else:
-            content = "، ".join(p[0] for p in pack["players"])
-        bonus = pack.get("bonus_budget", 0)
-        bonus_text = f" + {bonus} میلیون تومان" if bonus else ""
-        lines.append(f"{pack['label']} ({pack['cost']} 🎟): {content}{bonus_text}")
-    return "\n".join(lines)
-
-
-def redeem_pack(user_id: int, pack_key: str) -> str:
-    pack = PACKS.get(pack_key)
-    if not pack:
-        return "این پک پیدا نشد."
-
-    tokens = get_user_foot_tokens(user_id)
-    if tokens < pack["cost"]:
-        return f"🎟 فوت توکن کافی نداری! هزینه‌ی این پک: {pack['cost']}، موجودی تو: {tokens}"
-
-    if pack["players"] == "ALL":
-        player_ids = [p["player_id"] for p in get_all_players()]
-    else:
-        player_ids = [
-            ensure_pack_player(name, team, pos, price, power)
-            for name, team, pos, price, power in pack["players"]
-        ]
-
-    added_names = []
-    already_owned = 0
-    team_full_count = 0
-    for pid in player_ids:
-        if is_player_in_team(user_id, pid):
-            already_owned += 1
-            continue
-        if get_user_team_size(user_id) >= MAX_TEAM_SIZE:
-            team_full_count += 1
-            continue
-        add_player_to_team(user_id, pid)
-        p = get_player(pid)
-        if p:
-            added_names.append(p["name"])
-
-    set_user_foot_tokens(user_id, tokens - pack["cost"])
-    bonus = pack.get("bonus_budget", 0)
-    if bonus:
-        update_user_budget(user_id, get_user_budget(user_id) + bonus)
-
-    lines = [f"🎁 {pack['label']} فعال شد!"]
-    if added_names:
-        lines.append("بازیکن‌های جدید: " + "، ".join(added_names))
-    if already_owned:
-        lines.append(f"({already_owned} نفرشون از قبل توی تیمت بودن)")
-    if team_full_count:
-        lines.append(f"⚠️ تیمت پر بود، {team_full_count} بازیکن اضافه نشد.")
-    if bonus:
-        lines.append(f"💰 {bonus} میلیون تومان هم به بودجه‌ت اضافه شد.")
-    lines.append(f"🎟 فوت توکن باقی‌مانده: {tokens - pack['cost']}")
-    return "\n".join(lines)
-
-
-def get_owned_power(user_id: int, player_id: int):
-    """قدرت این بازیکن مخصوص همین تیم (نه قدرت مشترک کاتالوگ)"""
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT COALESCE(up.owned_power, p.power) as power
-            FROM players p
-            JOIN user_players up ON up.player_id = p.player_id
-            WHERE up.user_id = ? AND up.player_id = ?
-        """, (user_id, player_id))
-        row = c.fetchone()
-        return row["power"] if row else None
-
-
-async def upgrade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    player_id = int(query.data.split("_")[1])
-
-    player = get_player(player_id)
-    if not player or not is_player_in_team(user_id, player_id):
-        await query.message.reply_text("این بازیکن توی تیم تو نیست.")
-        return
-
-    current_power = get_owned_power(user_id, player_id)
-    cost = max(1, round(current_power)) * UPGRADE_COST_PER_POINT
-    budget = get_user_budget(user_id)
-    if budget < cost:
-        await query.message.reply_text(
-            f"بودجه کافی نداری! هزینه ارتقا: {cost} م.ت، بودجه تو: {budget:.1f} م.ت"
-        )
-        return
-
-    new_power = current_power + 1
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE user_players SET owned_power = ? WHERE user_id = ? AND player_id = ?",
-            (new_power, user_id, player_id),
-        )
-    update_user_budget(user_id, budget - cost)
-
-    await query.message.reply_text(
-        f"⬆️ {player['name']} ارتقا پیدا کرد!\n"
-        f"قدرت جدید (فقط توی تیم خودت): {new_power:.0f}\n"
-        f"هزینه پرداخت‌شده: {cost} م.ت\n"
-        f"بودجه باقی‌مانده: {budget - cost:.1f} م.ت"
-    )
-
-
-async def perform_battle(user_id: int, bot):
-    """بازی رو شبیه‌سازی می‌کنه؛ برمی‌گردونه: (متن نتیجه برای خودم، آیدی حریف یا None، متن نتیجه برای حریف)"""
-    today = get_today_str()
-    if get_last_action_date(user_id, "last_battle_date") == today:
-        return (
-            "⏳ امروز قبلاً بازی کردی! فردا دوباره بیا.",
-            None,
-            None,
-        )
-
-    my_size = get_user_team_size(user_id)
-    if my_size < MIN_TEAM_SIZE:
-        return (
-            f"اول باید حداقل {MIN_TEAM_SIZE} بازیکن توی تیمت داشته باشی.",
-            None,
-            None,
-        )
-
-    missing_text = get_missing_positions_text(user_id)
-    if missing_text:
-        return (missing_text, None, None)
-
-    opponent = get_random_opponent(user_id, MIN_TEAM_SIZE)
-    if not opponent:
-        return (
-            "فعلاً هیچ حریف آماده‌ای پیدا نشد (کسی که تیمش کامل باشه). بعداً دوباره امتحان کن.",
-            None,
-            None,
-        )
-
-    set_last_action_date(user_id, "last_battle_date", today)
-
-    my_power = get_user_team_power(user_id)
-    opp_power = get_user_team_power(opponent["user_id"])
-    goals_me, goals_opp = simulate_goals(my_power, opp_power)
-
-    if goals_me == goals_opp:
-        record_battle_result(user_id, opponent["user_id"], is_draw=True)
-        my_result_line = f"🤝 مساوی شدید! هر دو {DRAW_POINTS} امتیاز گرفتین."
-        opp_result_line = f"🤝 مساوی شد! {DRAW_POINTS} امتیاز گرفتی."
-    elif goals_me > goals_opp:
-        record_battle_result(user_id, opponent["user_id"])
-        my_result_line = f"🏆 بردی! {WIN_POINTS} امتیاز به جدولت اضافه شد."
-        opp_result_line = "😔 باختی."
-    else:
-        record_battle_result(opponent["user_id"], user_id)
-        my_result_line = "😔 باختی."
-        opp_result_line = f"🏆 بردی! {WIN_POINTS} امتیاز به جدولت اضافه شد."
-
-    my_text = (
-        "⚔️ نتیجه بازی:\n\n"
-        f"تیم تو  {goals_me} - {goals_opp}  تیم {opponent['username']}\n\n"
-        f"{my_result_line}"
-    )
-    opp_text = (
-        "⚔️ یکی از حریفا باهات بازی کرد!\n\n"
-        f"تیم {opponent['username']}  {goals_opp} - {goals_me}  تیم حریف\n\n"
-        f"{opp_result_line}"
-    )
-    return my_text, opponent["user_id"], opp_text
-
-
-def render_battle_status(user_id: int) -> str:
-    my_size = get_user_team_size(user_id)
-    lines = ["⚔️ بازی‌ها دیگه خودسرو نیستن!", "فقط مدیر می‌تونه «روز بازی» رو شروع کنه؛ وقتی این کارو کنه، همه تیم‌های کامل با هم بازی می‌کنن و نتیجه توی کانال اعلام می‌شه.\n"]
-    if my_size < MIN_TEAM_SIZE:
-        lines.append(f"وضعیت تیم تو: هنوز کامل نیست (حداقل {MIN_TEAM_SIZE} بازیکن لازمه).")
-    else:
-        missing_text = get_missing_positions_text(user_id)
-        if missing_text:
-            lines.append("وضعیت تیم تو:\n" + missing_text)
-        else:
-            lines.append("✅ تیم تو کامله و آماده‌ی بازیه!")
-    return "\n".join(lines)
-
-
-async def battle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دیگه بازی‌ها خودسرو نیستن؛ فقط مدیر می‌تونه روز بازی رو شروع کنه (همه تیم‌ها با هم بازی می‌کنن)"""
-    await update.message.reply_text(render_battle_status(update.effective_user.id))
-
-
-def render_mystats(user) -> str:
-    row = get_or_create_user(user.id, user.username or user.first_name)
-    power = get_user_team_power(user.id)
-    return (
-        "📊 آمار تو:\n\n"
-        f"💰 بودجه: {row['budget']:.1f} م.ت\n"
-        f"⚡️ قدرت تیم: {power:.0f}\n"
-        f"🏆 برد: {row['wins']} | 🤝 مساوی: {row['draws']} | 😔 باخت: {row['losses']}\n"
-        f"🏅 امتیاز کل: {row['total_points']:.1f}"
-    )
-
-
-async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(render_mystats(update.effective_user))
-
-
-def render_league() -> str:
-    rows = get_leaderboard(10)
-    if not rows:
-        return "هنوز کسی امتیازی نداره."
-    lines = ["🏅 جدول لیگ (بر اساس میانگین امتیاز هر بازی):\n"]
-    medals = ["🥇", "🥈", "🥉"]
-    for i, r in enumerate(rows):
-        games = (r["wins"] or 0) + (r["draws"] or 0) + (r["losses"] or 0)
-        avg = (r["total_points"] / games) if games > 0 else 0.0
-        prefix = medals[i] if i < 3 else f"{i+1}."
-        lines.append(
-            f"{prefix} {team_display_name(r)} - میانگین {avg:.2f} "
-            f"({games} بازی، {r['total_points']:.1f} امتیاز کل)"
-        )
-    return "\n".join(lines)
-
-
-async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """جدول لیگ / رده‌بندی"""
-    await update.message.reply_text(render_league())
-
-
-def perform_academy(user_id: int) -> str:
-    today = get_today_str()
-    if get_last_action_date(user_id, "last_academy_date") == today:
-        return "⏳ امروز قبلاً از آکادمی بازیکن گرفتی! فردا دوباره بیا."
-
-    team_size = get_user_team_size(user_id)
-    if team_size >= MAX_TEAM_SIZE:
-        return f"تیم تو پره! حداکثر {MAX_TEAM_SIZE} بازیکن، اول یکیو بفروش."
-
-    set_last_action_date(user_id, "last_academy_date", today)
-
-    first = random.choice(ACADEMY_FIRST_NAMES)
-    last = random.choice(ACADEMY_LAST_NAMES)
-    name = f"{first} {last}"
-    position = random.choice(ACADEMY_POSITIONS)
-    price = random.randint(ACADEMY_MIN_PRICE, ACADEMY_MAX_PRICE)
-
-    player_id = add_player(name, "آکادمی", position, price)
-    add_player_to_team(user_id, player_id)
-
-    return (
-        f"🌱 آکادمی یک بازیکن جدید برات تربیت کرد!\n\n"
-        f"نام: {name}\n"
-        f"پست: {POSITION_FA.get(position, position)}\n"
-        f"ارزش: {price} م.ت\n\n"
-        f"این بازیکن رایگان مستقیم به تیمت اضافه شد. با گذشت زمان و بازی کردن می‌تونه امتیازش بالا بره."
-    )
-
-
-async def academy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """گرفتن یک بازیکن جوان و رایگان از آکادمی مستقیم به تیم کاربر"""
-    user_id = update.effective_user.id
-    await update.message.reply_text(perform_academy(user_id))
-
-
-def render_news() -> str:
-    return f"📰 آخرین خبر:\n\n{get_news()}"
-
-
-async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(render_news())
-
-
-# ---------- منوی شیشه‌ای (اینلاین) ----------
-
-async def team_setup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """انتخاب رنگ اول و دوم پیراهن تیم از دکمه‌های شیشه‌ای"""
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    data = query.data
-
-    if data.startswith("setcolor1_"):
-        color_key = data[len("setcolor1_"):]
-        if color_key not in KIT_COLOR_MAP:
-            return
-        set_user_kit_colors(user_id, color1=color_key)
-        await query.message.reply_text(
-            f"رنگ اول: {KIT_COLOR_MAP[color_key][1]} {KIT_COLOR_MAP[color_key][0]}\n\n"
-            "حالا رنگ دوم پیراهن رو انتخاب کن:",
-            reply_markup=kit_color_keyboard("setcolor2", exclude_key=color_key),
-        )
-
-    elif data.startswith("setcolor2_"):
-        color_key = data[len("setcolor2_"):]
-        if color_key not in KIT_COLOR_MAP:
-            return
-        set_user_kit_colors(user_id, color2=color_key)
-        row = get_user_row(user_id)
-        await query.message.reply_text(
-            f"✅ تیمت آماده شد: {team_display_name(row)}\n\n"
-            "این اسم و رنگ‌ها توی نتایج بازی‌ها نشون داده می‌شه."
-        )
-
-    elif data.startswith("setsponsor_"):
-        sponsor_key = data[len("setsponsor_"):]
-        if sponsor_key not in SPONSOR_MAP:
-            return
-        set_user_sponsor(user_id, sponsor_key)
-        label, emoji = SPONSOR_MAP[sponsor_key]
-        await query.message.reply_text(
-            f"✅ اسپانسر تیمت شد: {emoji} {label}\n\n"
-            f"از این به بعد هر بازی که تیمت انجام بده، {SPONSOR_MATCH_BONUS} میلیون تومان بهت واریز می‌شه."
-        )
-
-
-async def edit_team_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌های زیرمنوی «ویرایش تیم یک کاربر» توی پنل ادمین (مشاهده/افزودن/حذف بازیکن)"""
-    query = update.callback_query
-    await query.answer()
-
-    if not is_admin(query.from_user.id):
-        return
-
-    target_id = context.user_data.get("edit_team_target")
-    if not target_id:
-        await query.message.reply_text("اول باید یه کاربر انتخاب کنی. از پنل ادمین «✏️ ویرایش تیم یک کاربر» رو بزن.")
-        return
-
-    data = query.data
-    target_row = get_user_row(target_id)
-    if not target_row:
-        await query.message.reply_text("این کاربر دیگه پیدا نشد.")
-        return
-
-    if data == "editteam_view":
-        team = get_user_team(target_id)
-        if not team:
-            await query.message.reply_text(f"تیم «{team_display_name(target_row)}» فعلاً خالیه.")
-            return
-        lines = [f"👥 تیم «{team_display_name(target_row)}»:\n"]
-        for p in team:
-            lines.append(
-                f"#{p['player_id']} | {POSITION_FA.get(p['position'], p['position'])} | "
-                f"{p['name']} ({p['team']}) - قدرت: {p['power']:.0f}"
-            )
-        await query.message.reply_text("\n".join(lines))
-
-    elif data == "editteam_add":
-        context.user_data["awaiting"] = "admin_edit_team_add_player"
-        await query.message.reply_text(
-            f"آیدی بازیکنی که می‌خوای به تیم «{team_display_name(target_row)}» اضافه کنی رو بفرست:"
-        )
-
-    elif data == "editteam_remove":
-        team = get_user_team(target_id)
-        if not team:
-            await query.message.reply_text(f"تیم «{team_display_name(target_row)}» خالیه، بازیکنی برای حذف نیست.")
-            return
-        await query.message.reply_text(
-            f"کدوم بازیکن از تیم «{team_display_name(target_row)}» حذف بشه؟",
-            reply_markup=team_remove_keyboard(target_id),
-        )
-
-    elif data.startswith("editteam_rm_"):
-        player_id = int(data[len("editteam_rm_"):])
-        player = get_player(player_id)
-        remove_player_from_team(target_id, player_id)
-        name = player["name"] if player else f"#{player_id}"
-        await query.message.reply_text(f"➖ «{name}» از تیم «{team_display_name(target_row)}» حذف شد.")
-        team = get_user_team(target_id)
-        if team:
-            await query.message.reply_text("بازیکن دیگه‌ای هم می‌خوای حذف کنی؟", reply_markup=team_remove_keyboard(target_id))
-
-
-async def manual_pairing_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """جفت کردن دستی بازی‌ها توسط ادمین: خودش دو به دو تیم‌ها رو انتخاب می‌کنه و بازی برگزار می‌شه"""
-    query = update.callback_query
-    await query.answer()
-
-    if not is_admin(query.from_user.id):
-        return
-
-    data = query.data
-
-    if data == "manual_cancel":
-        context.user_data["manual_pair_a"] = None
-        context.user_data["manual_matches"] = []
-        await query.message.reply_text("لغو شد.", reply_markup=admin_menu_keyboard())
-        return
-
-    if data == "manual_finish":
-        matches = context.user_data.get("manual_matches") or []
-        context.user_data["manual_pair_a"] = None
-        context.user_data["manual_matches"] = []
-        if not matches:
-            await query.message.reply_text("هنوز هیچ بازی‌ای ثبت نشده بود.", reply_markup=admin_menu_keyboard())
-            return
-        channel_text = "⚽️ نتایج بازی‌های امروز:\n\n" + "\n".join(matches)
-        if CHANNEL_ID:
-            try:
-                await context.bot.send_message(chat_id=CHANNEL_ID, text=channel_text)
-            except Exception as e:
-                logger.warning(f"ارسال نتایج به کانال ناموفق بود: {e}")
-        summary = f"✅ {len(matches)} بازی برگزار شد."
-        if not CHANNEL_ID:
-            summary += "\n\n⚠️ آیدی کانال تنظیم نشده، برای همین نتایج فقط به خود بازیکنا پیام خصوصی شد."
-        await query.message.reply_text(summary, reply_markup=admin_menu_keyboard())
-        return
-
-    if data.startswith("manualpick_"):
-        picked_id = int(data[len("manualpick_"):])
-        team_a = context.user_data.get("manual_pair_a")
-
-        if team_a is None:
-            context.user_data["manual_pair_a"] = picked_id
-            row = get_user_row(picked_id)
-            await query.message.reply_text(
-                f"تیم اول: {team_display_name(row)}\nحالا حریفشو انتخاب کن:",
-                reply_markup=manual_teams_keyboard(exclude_id=picked_id),
-            )
-            return
-
-        if picked_id == team_a:
-            await query.message.reply_text("باید دو تیم متفاوت انتخاب کنی.")
-            return
-
-        line = await play_one_match(context.bot, team_a, picked_id)
-        context.user_data.setdefault("manual_matches", []).append(line)
-        context.user_data["manual_pair_a"] = None
-
-        await query.message.reply_text(
-            f"✅ بازی ثبت شد:\n{line}\n\nتیم بعدی رو انتخاب کن یا پایان بده:",
-            reply_markup=manual_teams_keyboard(),
-        )
-
-
-async def friendly_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """انتخاب حریف برای بازی دوستانه از طرف یه کاربر عادی"""
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    requester_id = query.from_user.id
-
-    if data == "friendly_cancel":
-        await query.message.reply_text("باشه، بی‌خیال بازی دوستانه شدیم.")
-        return
-
-    if data.startswith("friendlypick_"):
-        opponent_id = int(data[len("friendlypick_"):])
-        if opponent_id == requester_id:
-            await query.message.reply_text("نمی‌تونی با خودت بازی کنی 😄")
-            return
-        if get_user_team_size(requester_id) < 1:
-            await query.message.reply_text("اول باید حداقل یه بازیکن توی تیمت داشته باشی.")
-            return
-        text_a = await play_friendly_match(context.bot, requester_id, opponent_id)
-        await query.message.reply_text(text_a)
-
-
-async def buypack_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """خرید یکی از پک‌های بازیکن با فوت توکن"""
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    pack_key = query.data[len("buypack_"):]
-    result = redeem_pack(user_id, pack_key)
-    await query.message.reply_text(result)
-
-
-async def lineup_tactic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """چیدن آرایش/ترکیب اصلی، انتخاب تاکتیک، و ارتقای ورزشگاه"""
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
-
-    if data == "lineup_formations":
-        row = get_user_row(user_id)
-        current = row["formation"] if row and row["formation"] in FORMATIONS else None
-        text = f"آرایش فعلی: {current or 'انتخاب نشده'}\n\nیکی از این آرایش‌ها رو انتخاب کن:"
-        await query.message.reply_text(text, reply_markup=formation_keyboard())
-        return
-
-    if data.startswith("setformation_"):
-        key = data[len("setformation_"):]
-        if key not in FORMATIONS:
-            return
-        set_formation(user_id, key)
-        req = dict(FORMATIONS[key])
-        req["GK"] = 1
-        need_text = "، ".join(f"{POSITION_FA[pos]}: {n}" for pos, n in req.items())
-        await query.message.reply_text(
-            f"✅ آرایش «{key}» انتخاب شد.\nترکیب لازم: {need_text}\n\n"
-            "حالا بازیکن‌های ترکیب اصلی رو انتخاب کن:",
-            reply_markup=lineup_pick_keyboard(user_id),
-        )
-        return
-
-    if data == "lineup_pick":
-        row = get_user_row(user_id)
-        if not row or row["formation"] not in FORMATIONS:
-            await query.message.reply_text("اول باید یه آرایش انتخاب کنی.", reply_markup=formation_keyboard())
-            return
-        await query.message.reply_text("بازیکن‌های ترکیب اصلی رو انتخاب کن:", reply_markup=lineup_pick_keyboard(user_id))
-        return
-
-    if data.startswith("togglelineup_"):
-        player_id = int(data[len("togglelineup_"):])
-        required = get_lineup_required_counts(user_id)
-        if not required:
-            await query.message.reply_text("اول باید یه آرایش انتخاب کنی.", reply_markup=formation_keyboard())
-            return
-        player = get_player(player_id)
-        counts = get_lineup_position_counts(user_id)
-        lineup_ids = {p["player_id"] for p in get_user_lineup(user_id)}
-        if player_id not in lineup_ids and player and counts.get(player["position"], 0) >= required.get(player["position"], 0):
-            await query.answer(f"جای {POSITION_FA.get(player['position'], player['position'])} توی این آرایش پره!", show_alert=True)
-            return
-        toggle_lineup_player(user_id, player_id)
-        await query.message.reply_text("ترکیب به‌روزرسانی شد:", reply_markup=lineup_pick_keyboard(user_id))
-        return
-
-    if data == "lineup_confirm":
-        if is_lineup_complete(user_id):
-            await query.message.reply_text("✅ ترکیب اصلی‌ت کامل و ثبت شد! از این به بعد توی بازی‌ها همین ۱۱ نفر حساب می‌شن.")
-        else:
-            required = get_lineup_required_counts(user_id) or {}
-            counts = get_lineup_position_counts(user_id)
-            missing = [f"{POSITION_FA[pos]}: {counts.get(pos,0)}/{need}" for pos, need in required.items() if counts.get(pos, 0) != need]
-            await query.message.reply_text(
-                "⚠️ ترکیبت هنوز کامل نیست:\n" + "\n".join(missing),
-                reply_markup=lineup_pick_keyboard(user_id),
-            )
-        return
-
-    if data == "tactic_pick":
-        current = TACTICS[get_user_tactic(user_id)]
-        await query.message.reply_text(
-            f"تاکتیک فعلی: {current['emoji']} {current['label']}\n\n"
-            "⚖️ استاندارد: نه ضعف نه قوت خاصی، متعادل\n"
-            "🔄 تیکی‌تاکا: هم حمله هم دفاع بهتر می‌شه (نیاز به تیم قوی)\n"
-            "🔥 پرس سنگین: حمله خیلی قوی، ولی دفاع ضعیف می‌شه\n"
-            "🚌 اتوبوسی: دفاع خیلی قوی، ولی حمله خیلی ضعیف می‌شه\n"
-            "⚡ ضدحمله: دفاع خوب، حمله معمولی ولی کارآمد\n"
-            "↔️ بازی از جناحین: حمله قوی، دفاع کمی ضعیف‌تر\n\n"
-            "کدومو می‌خوای؟",
-            reply_markup=tactic_keyboard(),
-        )
-        return
-
-    if data.startswith("settactic_"):
-        key = data[len("settactic_"):]
-        if key not in TACTICS:
-            return
-        set_user_tactic(user_id, key)
-        t = TACTICS[key]
-        await query.message.reply_text(f"✅ تاکتیک تیمت شد: {t['emoji']} {t['label']}")
-        return
-
-    if data == "stadium_upgrade":
-        result = upgrade_stadium(user_id)
-        await query.message.reply_text(result)
-        return
-
-
-async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user = query.from_user
-    user_id = user.id
-    action = query.data
-
-    if action == "menu_players":
-        for text, keyboard in render_players_messages(user_id):
-            await query.message.reply_text(text, reply_markup=keyboard)
-
-    elif action == "menu_myteam":
-        result = render_myteam(user_id)
-        if result is None:
-            await query.message.reply_text("هنوز تیمی نساختی! از «📋 لیست بازیکنان» انتخاب کن.")
-        else:
-            text, keyboard = result
-            await query.message.reply_text(text, reply_markup=keyboard)
-
-    elif action == "menu_battle":
-        await query.message.reply_text(render_battle_status(user_id))
-
-    elif action == "menu_team_setup":
-        context.user_data["team_setup_stage"] = "name"
-        await query.message.reply_text(
-            "اسم تیمت رو بفرست (مثلاً «شاهین‌های سرخ»). این اسم توی نتایج بازی‌ها نشون داده می‌شه:"
-        )
-
-    elif action == "menu_statement":
-        today = get_today_str()
-        if get_last_action_date(user_id, "last_statement_date") == today:
-            await query.message.reply_text("⏳ امروز قبلاً یه بیانیه دادی! فردا دوباره بیا.")
-        elif not CHANNEL_ID:
-            await query.message.reply_text("⚠️ آیدی کانال هنوز تنظیم نشده، برای همین بیانیه‌ها جایی پست نمی‌شن.")
-        else:
-            context.user_data["awaiting_statement"] = True
-            await query.message.reply_text(
-                "متن بیانیه‌ت رو بفرست؛ با اسم تیمت توی کانال پست می‌شه (هر تیم روزی فقط یه بیانیه):"
-            )
-
-    elif action == "menu_sponsor":
-        row = get_user_row(user_id)
-        current = row["sponsor"] if row and "sponsor" in row.keys() else None
-        current_text = ""
-        if current and current in SPONSOR_MAP:
-            label, emoji = SPONSOR_MAP[current]
-            current_text = f"اسپانسر فعلیت: {emoji} {label}\n\n"
-        await query.message.reply_text(
-            f"{current_text}یه اسپانسر برای باشگاهت انتخاب کن. اسپانسر هر بار که تیمت توی لیگ بازی کنه، "
-            f"{SPONSOR_MATCH_BONUS} میلیون تومان به حسابت واریز می‌کنه (بازی‌های دوستانه شامل این پاداش نمی‌شن):",
-            reply_markup=sponsor_keyboard(),
-        )
-
-    elif action == "menu_packs":
-        await query.message.reply_text(render_packs_text(user_id), reply_markup=packs_keyboard())
-
-    elif action == "menu_lineup_tactics":
-        row = get_user_row(user_id)
-        formation = row["formation"] if row and row["formation"] in FORMATIONS else None
-        tactic_key = get_user_tactic(user_id)
-        tactic = TACTICS[tactic_key]
-        lineup_status = "کامل ✅" if is_lineup_complete(user_id) else "ناقص یا چیده‌نشده ⚠️"
-        text = (
-            f"آرایش فعلی: {formation or 'انتخاب نشده'}\n"
-            f"ترکیب اصلی: {lineup_status}\n"
-            f"تاکتیک فعلی: {tactic['emoji']} {tactic['label']}\n\n"
-            "چیکار می‌خوای بکنی؟"
-        )
-        await query.message.reply_text(text, reply_markup=lineup_tactics_menu_keyboard())
-
-    elif action == "menu_stadium":
-        row = get_user_row(user_id)
-        level = row["stadium_level"] or 1
-        fans = row["fans"] or 0
-        cost = get_stadium_upgrade_cost(level)
-        upgrade_text = (
-            f"هزینه‌ی ارتقا به سطح {level+1}: {cost} م.ت" if level < STADIUM_MAX_LEVEL
-            else "ورزشگاهت به حداکثر سطح رسیده! 🏆"
-        )
-        kb_rows = []
-        if level < STADIUM_MAX_LEVEL:
-            kb_rows.append([InlineKeyboardButton("⬆️ ارتقای ورزشگاه", callback_data="stadium_upgrade")])
-        await query.message.reply_text(
-            f"🏟 ورزشگاه «{team_display_name(row)}»\n\n"
-            f"سطح فعلی: {level} از {STADIUM_MAX_LEVEL}\n"
-            f"👥 هواداران: {fans}\n"
-            f"{upgrade_text}\n\n"
-            "هرچی سطح ورزشگاه و تعداد هوادارات بیشتر باشه، بعد از هر بازی رسمی درآمد بلیت بیشتری می‌گیری.",
-            reply_markup=InlineKeyboardMarkup(kb_rows) if kb_rows else None,
-        )
-
-    elif action == "menu_friendly":
-        if get_user_team_size(user_id) < 1:
-            await query.message.reply_text("اول باید حداقل یه بازیکن توی تیمت داشته باشی.")
-        else:
-            opponents = get_friendly_opponents(user_id)
-            if not opponents:
-                await query.message.reply_text("فعلاً هیچ تیم دیگه‌ای برای بازی دوستانه نیست.")
-            else:
-                await query.message.reply_text(
-                    "حریفت رو برای یه بازی دوستانه انتخاب کن (این بازی روی جدول لیگ تاثیری نداره):",
-                    reply_markup=friendly_opponents_keyboard(user_id),
-                )
-
-    elif action == "menu_academy":
-        await query.message.reply_text(perform_academy(user_id))
-
-    elif action == "menu_budget":
-        await query.message.reply_text(render_budget(user_id))
-
-    elif action == "menu_mystats":
-        await query.message.reply_text(render_mystats(user))
-
-    elif action == "menu_league":
-        await query.message.reply_text(render_league())
-
-    elif action == "menu_news":
-        await query.message.reply_text(render_news())
-
-    elif action == "menu_admin":
-        if not is_admin(user_id):
-            await query.message.reply_text("این بخش فقط برای ادمین‌هاست.")
-            return
-        await query.message.reply_text("🛠 پنل ادمین:", reply_markup=admin_menu_keyboard())
-
-
-async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    if not is_admin(user_id):
-        await query.message.reply_text("این دستور فقط برای ادمین‌هاست.")
-        return
-
-    action = query.data
-
-    if action == "admin_back":
-        await query.message.reply_text("منوی اصلی:", reply_markup=main_menu_keyboard(user_id))
-        return
-
-    if action == "admin_toggle_bot":
-        new_state = not is_bot_enabled()
-        set_bot_enabled(new_state)
-        status_text = "🟢 ربات روشن شد و کاربرا می‌تونن ازش استفاده کنن." if new_state else "🔴 ربات خاموش شد؛ فقط ادمین‌ها می‌تونن باهاش کار کنن."
-        await query.message.reply_text(status_text, reply_markup=admin_menu_keyboard())
-        return
-
-    if action == "admin_matchday":
-        choice_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚡ خودکار (لیگ کامل، همه با همه)", callback_data="admin_matchday_auto")],
-            [InlineKeyboardButton("🎯 دستی (خودم جفت می‌کنم)", callback_data="admin_matchday_manual")],
-            [InlineKeyboardButton("❌ انصراف", callback_data="admin_back")],
-        ])
-        await query.message.reply_text("چطور می‌خوای بازی‌های امروز رو شروع کنی؟", reply_markup=choice_kb)
-        return
-
-    if action == "admin_matchday_auto":
-        eligible = get_all_matchday_eligible_users()
-        n = len(eligible)
-        max_possible = n * (n - 1) // 2 if n >= 2 else 0
-        new_matches = 0
-        for i in range(n):
-            for j in range(i + 1, n):
-                if not has_played_fixture(eligible[i], eligible[j]):
-                    new_matches += 1
-        confirm_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ بله، بازی‌ها رو شروع کن", callback_data="admin_matchday_confirm")],
-            [InlineKeyboardButton("❌ انصراف", callback_data="admin_back")],
-        ])
-        already_played_note = ""
-        if max_possible - new_matches > 0:
-            already_played_note = f"\n({max_possible - new_matches} جفت رفت‌وبرگشتشون قبلاً کامل شده و دوباره تکرار نمی‌شن.)"
-        team_list_text = ""
-        if eligible:
-            names = [team_display_name(get_user_row(uid)) for uid in eligible]
-            team_list_text = "\n\nتیم‌های شرکت‌کننده:\n" + "\n".join(f"• {nm}" for nm in names)
-        await query.message.reply_text(
-            f"⚠️ الان {n} تیم آماده‌ی بازی هستن (ترکیبشون کامله).\n"
-            f"با تایید، {new_matches} بازی جدید (رفت یا برگشت، هرکدوم هنوز کامل نشده) برگزار می‌شه؛ "
-            "نتیجه‌ها هم توی کانال اعلام می‌شه."
-            f"{already_played_note}"
-            f"{team_list_text}\n\n"
-            "مطمئنی؟",
-            reply_markup=confirm_kb,
-        )
-        return
-
-    if action == "admin_matchday_confirm":
-        summary = await run_matchday(context.bot)
-        await query.message.reply_text(summary)
-        return
-
-    if action == "admin_start_auto_season":
-        existing = context.job_queue.get_jobs_by_name("auto_matchday_job") if context.job_queue else []
-        if existing:
-            await query.message.reply_text("🚀 فصل خودکار از قبل در حال اجراست (هر ۵ ساعت یه دور بازی می‌شه).")
-        elif not context.job_queue:
-            await query.message.reply_text(
-                "⚠️ زمان‌بند (JobQueue) روی این سرور فعال نیست. باید کتابخونه‌ی "
-                "python-telegram-bot[job-queue] نصب باشه."
-            )
-        else:
-            context.job_queue.run_repeating(
-                auto_matchday_job, interval=5 * 3600, first=10, name="auto_matchday_job"
-            )
-            await query.message.reply_text(
-                "🚀 فصل خودکار شروع شد!\n"
-                "هر ۵ ساعت یه دور بازی خودش برگزار می‌شه (هر جفت تیم رفت و برگشت بازی می‌کنه)، "
-                "و وقتی همه‌ی تیم‌های آماده رفت‌وبرگشتشون تموم بشه، خودش متوقف می‌شه و "
-                "جدول نهایی و قهرمان فصل رو توی کانال اعلام می‌کنه."
-            )
-        return
-
-    if action == "admin_stop_auto_season":
-        existing = context.job_queue.get_jobs_by_name("auto_matchday_job") if context.job_queue else []
-        for job in existing:
-            job.schedule_removal()
-        await query.message.reply_text("⏹ فصل خودکار متوقف شد." if existing else "فصل خودکاری در حال اجرا نبود.")
-        return
-
-    if action == "admin_matchday_manual":
-        context.user_data["manual_pair_a"] = None
-        context.user_data["manual_matches"] = []
-        teams = get_all_teams_for_manual()
-        if not teams:
-            await query.message.reply_text("هیچ کاربری هنوز حتی یه بازیکن هم نداره.")
-            return
-        await query.message.reply_text(
-            f"🎯 {len(teams)} تیم هست (مهم نیست کامل باشن یا نه). اول تیم شماره‌ی یک رو انتخاب کن:",
-            reply_markup=manual_teams_keyboard(),
-        )
-        return
-
-    if action == "admin_reset_league":
-        confirm_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ بله، ریست کن", callback_data="admin_reset_confirm")],
-            [InlineKeyboardButton("❌ انصراف", callback_data="admin_back")],
-        ])
-        await query.message.reply_text(
-            "⚠️ مطمئنی؟ این کار امتیاز و رکورد همه کاربرا رو صفر می‌کنه.",
-            reply_markup=confirm_kb,
-        )
-        return
-
-    if action == "admin_reset_confirm":
-        reset_league()
-        await query.message.reply_text("♻️ جدول لیگ ریست شد. امتیاز و رکورد همه کاربرا صفر شد.")
-        return
-
-    if action == "admin_remove_all_players":
-        confirm_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ بله، همه رو حذف کن", callback_data="admin_remove_all_players_confirm")],
-            [InlineKeyboardButton("❌ انصراف", callback_data="admin_back")],
-        ])
-        await query.message.reply_text(
-            "⚠️ این کار همه‌ی بازیکن‌ها رو کاملاً از بازی حذف می‌کنه — هم از فروشگاه، هم از تیم همه‌ی کاربرا. "
-            "غیرقابل بازگشته!\n\nمطمئنی؟",
-            reply_markup=confirm_kb,
-        )
-        return
-
-    if action == "admin_remove_all_players_confirm":
-        remove_all_players()
-        await query.message.reply_text("💥 همه‌ی بازیکن‌ها حذف شدن. حالا می‌تونی بازیکن‌های جدید اضافه کنی.")
-        return
-
-    if action == "admin_clear_all_teams":
-        confirm_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ بله، همه‌ی تیم‌ها رو خالی کن", callback_data="admin_clear_all_teams_confirm")],
-            [InlineKeyboardButton("❌ انصراف", callback_data="admin_back")],
-        ])
-        await query.message.reply_text(
-            "⚠️ این کار تیم همه‌ی کاربرا رو کاملاً پاک می‌کنه و بودجه‌ی همه به مقدار اولیه برمی‌گرده "
-            "(بازیکن‌ها توی فروشگاه می‌مونن، امتیاز و اسم تیم هرکس دست نمی‌خوره).\n\nمطمئنی؟",
-            reply_markup=confirm_kb,
-        )
-        return
-
-    if action == "admin_clear_all_teams_confirm":
-        clear_all_teams()
-        await query.message.reply_text(
-            f"💥 تیم همه‌ی کاربرا کاملاً پاک شد و بودجه‌ی همه به {INITIAL_BUDGET} م.ت برگشت. "
-            "هرکس می‌تونه از نو تیم بسازه."
-        )
-        return
-
-    if action == "admin_edit_team":
-        context.user_data["awaiting"] = "admin_edit_team_user_id"
-        await query.message.reply_text("آیدی عددی کاربری که می‌خوای تیمش رو ویرایش کنی رو بفرست:")
-        return
-
-    if action == "admin_edit_team_menu":
-        target_id = context.user_data.get("edit_team_target")
-        if not target_id:
-            await query.message.reply_text("اول باید یه کاربر انتخاب کنی. از پنل ادمین «✏️ ویرایش تیم یک کاربر» رو بزن.")
-            return
-        row = get_user_row(target_id)
-        await query.message.reply_text(
-            f"در حال ویرایش تیم: {team_display_name(row)}\nچیکار می‌خوای بکنی؟",
-            reply_markup=edit_team_menu_keyboard(),
-        )
-        return
-
-    if action == "admin_back_to_panel":
-        await query.message.reply_text("🛠 پنل ادمین:", reply_markup=admin_menu_keyboard())
-        return
-
-    prompts = {
-        "admin_give_budget": "آیدی عددی کاربر و مقدار رو با یه فاصله بفرست.\nمثال: 123456789 50",
-        "admin_give_tokens": "آیدی عددی کاربر و مقدار فوت توکن رو با یه فاصله بفرست.\nمثال: 123456789 50",
-        "admin_set_news": "متن خبر جدید رو بفرست:",
-        "admin_add_player": (
-            "اطلاعات بازیکن رو به این شکل بفرست:\n"
-            "نام|تیم|پست(GK/DF/MF/FW)|قیمت|قدرت(اختیاری)\n\n"
-            "مثال:\nرونالدو|النصر|FW|14\nیا با قدرت دلخواه:\nرونالدو|النصر|FW|14|16"
-        ),
-        "admin_remove_player": "آیدی بازیکنی که می‌خوای حذف بشه رو بفرست:",
-        "admin_set_points": "آیدی بازیکن و امتیاز رو با یه فاصله بفرست.\nمثال: 12 5",
-        "admin_set_power": "آیدی بازیکن و قدرت جدید رو با یه فاصله بفرست.\nمثال: 12 15",
-        "admin_clear_team": "آیدی عددی کاربری که می‌خوای تیمش خالی بشه رو بفرست:",
-    }
-
-    if action in prompts:
-        context.user_data["awaiting"] = action
-        await query.message.reply_text(prompts[action])
-
-
-async def admin_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """وقتی کاربر (عادی یا ادمین) از پنل شیشه‌ای یه گزینه رو زده و منتظر ورودی متنیشیم"""
-    user_id = update.effective_user.id
-
-    # ---- تنظیم اسم تیم (برای همه کاربرا، نه فقط ادمین) ----
-    if context.user_data.get("team_setup_stage") == "name":
-        context.user_data["team_setup_stage"] = None
-        team_name = update.message.text.strip()[:40]
-        if not team_name:
-            await update.message.reply_text("اسم تیم نمی‌تونه خالی باشه. دوباره امتحان کن.")
-            return
-        set_user_team_name(user_id, team_name)
-        await update.message.reply_text(
-            f"✅ اسم تیمت شد: «{team_name}»\n\nحالا رنگ اول پیراهن تیمت رو انتخاب کن:",
-            reply_markup=kit_color_keyboard("setcolor1"),
-        )
-        return
-
-    # ---- بیانیه (برای همه کاربرا، نه فقط ادمین) ----
-    if context.user_data.get("awaiting_statement"):
-        context.user_data["awaiting_statement"] = False
-        statement_text = update.message.text.strip()[:1000]
-        if not statement_text:
-            await update.message.reply_text("متن بیانیه نمی‌تونه خالی باشه.")
-            return
-        today = get_today_str()
-        if get_last_action_date(user_id, "last_statement_date") == today:
-            await update.message.reply_text("⏳ امروز قبلاً یه بیانیه دادی! فردا دوباره بیا.")
-            return
-        row = get_user_row(user_id)
-        channel_text = f"📢 بیانیه رسمی از طرف {team_display_name(row)}:\n\n{statement_text}"
-        if CHANNEL_ID:
-            try:
-                await context.bot.send_message(chat_id=CHANNEL_ID, text=channel_text)
-                set_last_action_date(user_id, "last_statement_date", today)
-                await update.message.reply_text("✅ بیانیه‌ت توی کانال پست شد.")
-            except Exception as e:
-                logger.warning(f"ارسال بیانیه به کانال ناموفق بود: {e}")
-                await update.message.reply_text("⚠️ ارسال بیانیه به کانال ناموفق بود؛ مطمئن شو ربات ادمین کانال باشه.")
-        else:
-            await update.message.reply_text("⚠️ آیدی کانال تنظیم نشده، برای همین بیانیه‌ای پست نشد.")
-        return
-
-    awaiting = context.user_data.get("awaiting")
-    if not awaiting:
-        return
-    if not is_admin(update.effective_user.id):
-        return
-
-    context.user_data["awaiting"] = None
-    text = update.message.text.strip()
-
-    if awaiting == "admin_give_budget":
-        parts = text.split()
-        if len(parts) != 2:
-            await update.message.reply_text("فرمت درست نبود. آیدی و مقدار رو با فاصله بفرست: مثلاً 123456789 50")
-            return
-        try:
-            target_id = int(parts[0])
-            amount = float(parts[1])
-        except ValueError:
-            await update.message.reply_text("آیدی و مقدار باید عدد باشن.")
-            return
-        with get_conn() as conn:
-            c = conn.cursor()
-            c.execute("SELECT 1 FROM users WHERE user_id = ?", (target_id,))
-            if c.fetchone() is None:
-                await update.message.reply_text("این آیدی هنوز ربات رو استارت نکرده.")
-                return
-        current = get_user_budget(target_id)
-        update_user_budget(target_id, current + amount)
-        await update.message.reply_text(
-            f"✅ به کاربر {target_id} مقدار {amount} م.ت اضافه شد.\nبودجه جدید: {current + amount:.1f} م.ت"
-        )
-
-    elif awaiting == "admin_give_tokens":
-        parts = text.split()
-        if len(parts) != 2:
-            await update.message.reply_text("فرمت درست نبود. آیدی و مقدار رو با فاصله بفرست: مثلاً 123456789 50")
-            return
-        try:
-            target_id = int(parts[0])
-            amount = int(parts[1])
-        except ValueError:
-            await update.message.reply_text("آیدی و مقدار باید عدد باشن.")
-            return
-        with get_conn() as conn:
-            c = conn.cursor()
-            c.execute("SELECT 1 FROM users WHERE user_id = ?", (target_id,))
-            if c.fetchone() is None:
-                await update.message.reply_text("این آیدی هنوز ربات رو استارت نکرده.")
-                return
-        current_tokens = get_user_foot_tokens(target_id)
-        set_user_foot_tokens(target_id, current_tokens + amount)
-        await update.message.reply_text(
-            f"✅ به کاربر {target_id} مقدار {amount} 🎟 فوت توکن اضافه شد.\nموجودی جدید: {current_tokens + amount}"
-        )
-
-    elif awaiting == "admin_set_news":
-        set_news(text)
-        await update.message.reply_text("✅ خبر جدید ثبت شد.")
-        if CHANNEL_ID:
-            try:
-                await context.bot.send_message(chat_id=CHANNEL_ID, text=f"📰 خبر جدید:\n\n{text}")
-            except Exception as e:
-                logger.warning(f"ارسال خبر به کانال ناموفق بود: {e}")
-                await update.message.reply_text("⚠️ خبر ثبت شد ولی ارسالش به کانال ناموفق بود؛ مطمئن شو ربات ادمین کانال باشه.")
-
-    elif awaiting == "admin_add_player":
-        parts = [p.strip() for p in text.split("|")]
-        if len(parts) not in (4, 5):
-            await update.message.reply_text(
-                "فرمت درست نبود.\nنام|تیم|پست(GK/DF/MF/FW)|قیمت|قدرت(اختیاری)"
-            )
-            return
-        if len(parts) == 5:
-            name, team, position, price_str, power_str = parts
-        else:
-            name, team, position, price_str = parts
-            power_str = None
-        if position not in ("GK", "DF", "MF", "FW"):
-            await update.message.reply_text("پست باید یکی از این‌ها باشه: GK, DF, MF, FW")
-            return
-        try:
-            price = float(price_str)
-            power = float(power_str) if power_str is not None else None
-        except ValueError:
-            await update.message.reply_text("قیمت و قدرت باید عدد باشن.")
-            return
-        player_id = add_player(name, team, position, price, power)
-        await update.message.reply_text(f"✅ بازیکن «{name}» با آیدی {player_id} اضافه شد.")
-
-    elif awaiting == "admin_remove_player":
-        player_id = parse_id(text)
-        if player_id is None:
-            await update.message.reply_text("آیدی بازیکن باید عدد باشه.")
-            return
-        player = get_player(player_id)
-        if not player:
-            await update.message.reply_text(
-                f"بازیکنی با آیدی {player_id} پیدا نشد. از «📋 لیست بازیکنان» آیدی درست رو چک کن."
-            )
-            return
-        delete_player(player_id)
-        await update.message.reply_text(f"🗑 بازیکن «{player['name']}» حذف شد.")
-
-    elif awaiting == "admin_clear_team":
-        target_user_id = parse_id(text)
-        if target_user_id is None:
-            await update.message.reply_text("آیدی کاربر باید عدد باشه.")
-            return
-        target_row = get_user_row(target_user_id)
-        if not target_row:
-            await update.message.reply_text("کاربری با این آیدی پیدا نشد.")
-            return
-        clear_user_team(target_user_id)
-        await update.message.reply_text(
-            f"🗑 تیم «{team_display_name(target_row)}» کاملاً پاک شد و بودجه‌ش به {INITIAL_BUDGET} م.ت برگشت. "
-            "الان می‌تونه از فروشگاه یه تیم جدید بسازه."
-        )
-
-    elif awaiting == "admin_edit_team_user_id":
-        target_user_id = parse_id(text)
-        if target_user_id is None:
-            await update.message.reply_text("آیدی کاربر باید عدد باشه.")
-            return
-        target_row = get_user_row(target_user_id)
-        if not target_row:
-            await update.message.reply_text("کاربری با این آیدی پیدا نشد.")
-            return
-        context.user_data["edit_team_target"] = target_user_id
-        await update.message.reply_text(
-            f"در حال ویرایش تیم: {team_display_name(target_row)}\nچیکار می‌خوای بکنی؟",
-            reply_markup=edit_team_menu_keyboard(),
-        )
-
-    elif awaiting == "admin_edit_team_add_player":
-        target_user_id = context.user_data.get("edit_team_target")
-        if not target_user_id:
-            await update.message.reply_text("اول باید یه کاربر انتخاب کنی.")
-            return
-        player_id = parse_id(text)
-        if player_id is None:
-            await update.message.reply_text("آیدی بازیکن باید عدد باشه.")
-            return
-        player = get_player(player_id)
-        if not player:
-            await update.message.reply_text(
-                f"بازیکنی با آیدی {player_id} پیدا نشد. از «📋 لیست بازیکنان» آیدی درست رو چک کن "
-                "(اگه قبلاً بازیکن‌ها رو حذف کرده باشی، آیدی‌ها ممکنه عوض شده باشن)."
-            )
-            context.user_data["awaiting"] = "admin_edit_team_add_player"
-            return
-        if is_player_in_team(target_user_id, player_id):
-            await update.message.reply_text("این بازیکن از قبل توی تیم این کاربر هست.")
-            context.user_data["awaiting"] = "admin_edit_team_add_player"
-            return
-        if get_user_team_size(target_user_id) >= MAX_TEAM_SIZE:
-            await update.message.reply_text(f"تیم این کاربر پره (حداکثر {MAX_TEAM_SIZE} نفر).")
-            return
-        add_player_to_team(target_user_id, player_id)
-        target_row = get_user_row(target_user_id)
-        await update.message.reply_text(
-            f"✅ «{player['name']}» به تیم «{team_display_name(target_row)}» اضافه شد.\n\n"
-            "می‌خوای بازیکن دیگه‌ای هم اضافه کنی؟ آیدیشو بفرست، یا برگرد به منوی ویرایش."
-        )
-        context.user_data["awaiting"] = "admin_edit_team_add_player"
-
-    elif awaiting == "admin_set_points":
-        parts = text.split()
-        if len(parts) != 2:
-            await update.message.reply_text("فرمت درست نبود. آیدی بازیکن و امتیاز رو با فاصله بفرست: مثلاً 12 5")
-            return
-        try:
-            player_id = int(parts[0])
-            points = float(parts[1])
-        except ValueError:
-            await update.message.reply_text("آیدی بازیکن و امتیاز باید عدد باشن.")
-            return
-        player = get_player(player_id)
-        if not player:
-            await update.message.reply_text("بازیکنی با این آیدی پیدا نشد.")
-            return
-        with get_conn() as conn:
-            conn.execute(
-                "UPDATE players SET week_points = ?, total_points = total_points + ? WHERE player_id = ?",
-                (points, points, player_id),
-            )
-            c = conn.cursor()
-            c.execute("SELECT DISTINCT user_id FROM user_players WHERE player_id = ?", (player_id,))
-            owners = c.fetchall()
-            for o in owners:
-                conn.execute(
-                    "UPDATE users SET total_points = total_points + ? WHERE user_id = ?",
-                    (points, o["user_id"]),
-                )
-        await update.message.reply_text(
-            f"✅ امتیاز {points} برای «{player['name']}» ثبت شد و به مجموع امتیاز صاحبانش اضافه شد."
-        )
-
-    elif awaiting == "admin_set_power":
-        parts = text.split()
-        if len(parts) != 2:
-            await update.message.reply_text("فرمت درست نبود. آیدی بازیکن و قدرت رو با فاصله بفرست: مثلاً 12 15")
-            return
-        try:
-            player_id = int(parts[0])
-            power = float(parts[1])
-        except ValueError:
-            await update.message.reply_text("آیدی بازیکن و قدرت باید عدد باشن.")
-            return
-        player = get_player(player_id)
-        if not player:
-            await update.message.reply_text("بازیکنی با این آیدی پیدا نشد.")
-            return
-        with get_conn() as conn:
-            conn.execute("UPDATE players SET power = ? WHERE player_id = ?", (power, player_id))
-        await update.message.reply_text(f"✅ قدرت «{player['name']}» روی {power:.0f} تنظیم شد.")
-
-
-# ---------- دستورات ادمین (متنی، برای کسی که ترجیح میده تایپ کنه) ----------
-
-async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
-        return
-    text = (
-        "🛠 پنل ادمین:\n\n"
-        "/give_budget <آیدی عددی کاربر> <مقدار> - افزودن بودجه به یک کاربر\n"
-        "/set_news <متن> - تنظیم خبر جدید\n"
-        "/add_player <نام>|<تیم>|<پست GK/DF/MF/FW>|<قیمت>|<قدرت اختیاری> - افزودن بازیکن جدید\n"
-        "/set_points <آیدی بازیکن> <امتیاز> - ثبت امتیاز هفتگی یک بازیکن\n"
-        "/set_power <آیدی بازیکن> <قدرت> - تنظیم دستی قدرت یک بازیکن\n"
-        "/remove_player <آیدی بازیکن> - حذف کامل یک بازیکن\n"
-        "/reset_league - ریست کامل جدول لیگ (صفر کردن امتیاز و رکورد همه)\n"
-        "/admin_help - همین راهنما"
-    )
-    await update.message.reply_text(text)
-
-
-async def give_budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
-        return
-
-    args = context.args
-    if len(args) != 2:
-        await update.message.reply_text("استفاده درست:\n/give_budget <آیدی عددی کاربر> <مقدار>")
-        return
-
+def clear_all_team_assignments():
+    """همه تیم‌های ملی را آزاد می‌کند، بدون حذف تیم‌ها یا بازیکنان."""
+    with db() as c:
+        c.execute("UPDATE national_teams SET assigned_user_id=NULL")
+        c.execute("UPDATE users SET national_team_code=NULL")
+    return True
+
+
+def admin_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👤 اختصاص تیم",callback_data="admin_assign"),InlineKeyboardButton("🔓 آزاد کردن",callback_data="admin_release")],
+        [InlineKeyboardButton("💰 بودجه تمرین",callback_data="admin_budget"),InlineKeyboardButton("⚡ قدرت تیم",callback_data="admin_power")],
+        [InlineKeyboardButton("💎 VIP تیم",callback_data="admin_vip")],
+        [InlineKeyboardButton("👥 تیم‌های اختصاص‌یافته",callback_data="admin_users")],
+        [InlineKeyboardButton("🧹 خالی کردن همه تیم‌ها",callback_data="admin_clear_teams")],
+        [InlineKeyboardButton("🎮 اجرای دور بعد",callback_data="admin_next_round")],
+        [InlineKeyboardButton("📰 ارسال خبر",callback_data="admin_news")],
+        [InlineKeyboardButton("🔄 ریست تورنمنت",callback_data="admin_reset")],
+        [InlineKeyboardButton("⬅️ منوی اصلی",callback_data="menu_back")],
+    ])
+
+# ========================= اخبار =========================
+def save_news(text):
+    with db() as c:
+        c.execute("INSERT INTO news(text) VALUES(?)",(text,))
+
+
+def recent_news():
+    with db() as c:
+        rows=c.execute("SELECT text,created_at FROM news ORDER BY news_id DESC LIMIT 10").fetchall()
+    if not rows: return "📰 هنوز خبری ثبت نشده."
+    return "📰 آخرین اخبار\n\n"+"\n\n".join([f"• {r['text']}" for r in rows])
+
+
+async def publish(bot, text):
+    save_news(text)
+    if not CHANNEL_ID:
+        logger.warning("CHANNEL_ID is empty")
+        return False, "CHANNEL_ID تنظیم نشده است."
     try:
-        target_id = int(args[0])
-        amount = float(args[1])
-    except ValueError:
-        await update.message.reply_text("آیدی و مقدار باید عدد باشن.")
-        return
-
-    current = get_user_budget(target_id)
-    # اگه کاربر قبلاً /start نزده باشه، ردیفش وجود نداره
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT 1 FROM users WHERE user_id = ?", (target_id,))
-        if c.fetchone() is None:
-            await update.message.reply_text("این آیدی هنوز ربات رو استارت نکرده.")
-            return
-
-    update_user_budget(target_id, current + amount)
-    await update.message.reply_text(
-        f"✅ به کاربر {target_id} مقدار {amount} م.ت اضافه شد.\nبودجه جدید: {current + amount:.1f} م.ت"
-    )
+        chat = await bot.get_chat(CHANNEL_ID)
+        await bot.send_message(chat_id=chat.id, text=text)
+        return True, "✅ خبر/بیانیه با موفقیت در کانال ارسال شد."
+    except Exception as e:
+        logger.exception("channel publish failed")
+        return False, f"❌ ارسال به کانال ناموفق بود.\n{e}"
 
 
-async def set_news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+# ========================= تصویر شروع جام جهانی =========================
+import base64 as _welcome_b64
+import tempfile as _welcome_tempfile
+from pathlib import Path as _WelcomePath
+
+_WELCOME_IMAGE_B64 = "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"
+_WELCOME_IMAGE_PATH = None
+
+def get_welcome_image():
+    global _WELCOME_IMAGE_PATH
+    if _WELCOME_IMAGE_PATH and _WelcomePath(_WELCOME_IMAGE_PATH).exists():
+        return _WELCOME_IMAGE_PATH
+    p = _WelcomePath(_welcome_tempfile.gettempdir()) / "wc2026_welcome.jpg"
+    p.write_bytes(_welcome_b64.b64decode(_WELCOME_IMAGE_B64))
+    _WELCOME_IMAGE_PATH = str(p)
+    return str(p)
+
+# ========================= handlers =========================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid=update.effective_user.id
+    ensure_user(uid,update.effective_user.username)
+    welcome_text="🏆 به ربات مدیریت جام جهانی ۲۰۲۶ خوش آمدی!\n\nاینجا تو مدیر یک تیم ملی هستی و باید تیم را تا قهرمانی هدایت کنی."
+    with open(get_welcome_image(),"rb") as photo:
+        await update.message.reply_photo(photo=photo,caption=welcome_text,reply_markup=main_keyboard(uid))
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("/start — منوی اصلی\n/myid — نمایش آیدی\n/admin — پنل مدیریت (فقط ادمین)\n/channel_test — تست ارسال به کانال (ادمین)")
+
+
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"🆔 آیدی شما: {update.effective_user.id}")
+
+
+async def channel_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
+        await update.message.reply_text("⛔ دسترسی نداری."); return
+    ok,err=await publish(context.bot,"🧪 تست کانال جام جهانی ۲۰۲۶\n\nاگر این پیام را می‌بینی، ارسال کانال درست کار می‌کند.")
+    await update.message.reply_text("✅ تست کانال موفق بود." if ok else f"❌ تست کانال شکست خورد.\n\n{err[:800]}")
+
+
+async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ دسترسی نداری.")
+        return
+    await update.message.reply_text("⚙️ پنل مدیریت جام جهانی",reply_markup=admin_keyboard())
+
+
+async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q=update.callback_query
+    await q.answer()
+    uid=q.from_user.id
+    ensure_user(uid,q.from_user.username)
+    data=q.data
+
+    if data=="menu_back":
+        await q.message.reply_text("🏆 منوی اصلی",reply_markup=main_keyboard(uid)); return
+    if data=="wc_my":
+        await q.message.reply_text(render_team(uid),reply_markup=main_keyboard(uid))
+        return
+    if data=="wc_players":
+        t=get_my_team(uid)
+        if not t:
+            await q.message.reply_text("❌ اول تیم ملی بگیر."); return
+        rows=team_player_list(t["team_code"])
+        kb=[]
+        for p in rows:
+            kb.append([InlineKeyboardButton(f"{p['player_name']} | {POSITION_FA.get(p['position'],p['position'])} | ⚡{float(p['power'])+float(p['training_power']):.0f}",callback_data=f"wc_profile_{p['player_id']}")])
+        markup=InlineKeyboardMarkup(kb)
+        await q.message.reply_text(render_players(uid)[:4000],reply_markup=markup)
+        return
+    if data.startswith("wc_profile_"):
+        pid=int(data.split("_")[-1])
+        await q.message.reply_text(player_profile_text(pid),reply_markup=main_keyboard(uid)); return
+    if data=="wc_train":
+        context.user_data["awaiting"]="train_team"
+        await q.message.reply_text("🏋️ مقدار بودجه‌ای که می‌خواهی برای تمرین تیم خرج کنی را بفرست.\nهر ۱۰ واحد = حدود +۱ قدرت تیم."); return
+    if data=="wc_player_train":
+        t=get_my_team(uid)
+        if not t:
+            await q.message.reply_text("❌ اول تیم ملی بگیر."); return
+        rows=team_player_list(t["team_code"])
+        kb=[]
+        for p in rows:
+            kb.append([InlineKeyboardButton(f"{p['player_name']} ⚡{p['power']+p['training_power']:.0f}",callback_data=f"wc_pt_{p['player_id']}")])
+        await q.message.reply_text("⭐ بازیکنی را برای تمرین انتخاب کن:",reply_markup=InlineKeyboardMarkup(kb)); return
+    if data.startswith("wc_pt_"):
+        pid=int(data.split("_")[-1])
+        context.user_data["awaiting"]=f"train_player:{pid}"
+        await q.message.reply_text("💰 مقدار بودجه تمرین این بازیکن را بفرست."); return
+    if data=="wc_tactics":
+        t=get_my_team(uid)
+        if not t: await q.message.reply_text("❌ اول تیم ملی بگیر."); return
+        st=team_settings(t["team_code"]); line=get_lineup(t["team_code"])
+        text=f"🧠 تاکتیک {team_name(t['team_code'])}\n\n📐 آرایش: {st['formation']}\n🧠 ذهنیت: {MENTALITIES.get(st['mentality'],st['mentality'])}\n🔥 پرس: {PRESSING.get(st['pressing'],st['pressing'])}\n🎯 پاس: {PASSING.get(st['passing'],st['passing'])}\n\n👥 ترکیب فعلی:\n"+"\n".join(f"{i+1}. {p['player_name']} ({p['position']})" for i,p in enumerate(line))
+        kb=InlineKeyboardMarkup([[InlineKeyboardButton("4-3-3",callback_data="setform_4-3-3"),InlineKeyboardButton("4-4-2",callback_data="setform_4-4-2")],[InlineKeyboardButton("4-2-3-1",callback_data="setform_4-2-3-1"),InlineKeyboardButton("3-5-2",callback_data="setform_3-5-2"),InlineKeyboardButton("5-3-2",callback_data="setform_5-3-2")],[InlineKeyboardButton("🛡️ دفاعی",callback_data="setment_defensive"),InlineKeyboardButton("⚖️ متعادل",callback_data="setment_balanced"),InlineKeyboardButton("🔥 هجومی",callback_data="setment_attacking")],[InlineKeyboardButton("🔥 پرس کم",callback_data="setpress_low"),InlineKeyboardButton("⚡ پرس متوسط",callback_data="setpress_medium"),InlineKeyboardButton("🚀 پرس زیاد",callback_data="setpress_high")],[InlineKeyboardButton("🎯 پاس کوتاه",callback_data="setpass_short"),InlineKeyboardButton("🔄 ترکیبی",callback_data="setpass_mixed"),InlineKeyboardButton("📡 مستقیم",callback_data="setpass_direct")],[InlineKeyboardButton("👥 ویرایش ترکیب",callback_data="wc_lineup"),InlineKeyboardButton("🎽 کاپیتان/ضربات",callback_data="wc_setpieces"),InlineKeyboardButton("📋 وضعیت بازیکنان",callback_data="wc_player_status")]])
+        await q.message.reply_text(text[:4000],reply_markup=kb)
+        return
+    if data=="wc_lineup":
+        t=get_my_team(uid)
+        if not t: await q.message.reply_text("❌ اول تیم ملی بگیر."); return
+        selected=[p["player_id"] for p in get_lineup(t["team_code"])]
+        context.user_data["lineup_draft"]=selected
+        await q.message.reply_text("👥 بازیکنان اصلی را انتخاب کن (دقیقاً ۱۱ نفر):",reply_markup=lineup_keyboard(t["team_code"],selected)); return
+    if data.startswith("lu_"):
+        t=get_my_team(uid)
+        if not t: return
+        draft=context.user_data.setdefault("lineup_draft",[p["player_id"] for p in get_lineup(t["team_code"])])
+        if data=="lu_auto":
+            context.user_data["lineup_draft"]=[p["player_id"] for p in get_lineup(t["team_code"])]
+        elif data=="lu_save":
+            ok,msg=save_lineup(t["team_code"],draft)
+            if ok: context.user_data.pop("lineup_draft",None)
+            await q.message.reply_text(("✅ " if ok else "❌ ")+msg,reply_markup=main_keyboard(uid)); return
+        else:
+            pid=int(data.split("_")[-1])
+            if pid in draft: draft.remove(pid)
+            else: draft.append(pid)
+            context.user_data["lineup_draft"]=draft
+        await q.message.edit_reply_markup(reply_markup=lineup_keyboard(t["team_code"],context.user_data["lineup_draft"])); return
+    if data=="wc_player_status":
+        t=get_my_team(uid)
+        if not t: await q.message.reply_text("❌ اول تیم ملی بگیر."); return
+        await q.message.reply_text("📋 وضعیت فرم، خستگی و محرومیت بازیکنان\n\n"+player_status_text(t["team_code"])[:3800],reply_markup=main_keyboard(uid)); return
+    if data=="wc_leaderboard":
+        await q.message.reply_text(leaderboard_text()[:4000],reply_markup=main_keyboard(uid)); return
+    if data.startswith("setpress_"):
+        t=get_my_team(uid)
+        if t: set_team_setting(t["team_code"],"pressing",data[9:])
+        await q.message.reply_text("✅ سطح پرس تغییر کرد.",reply_markup=main_keyboard(uid)); return
+    if data.startswith("setpass_"):
+        t=get_my_team(uid)
+        if t: set_team_setting(t["team_code"],"passing",data[8:])
+        await q.message.reply_text("✅ سبک پاس تغییر کرد.",reply_markup=main_keyboard(uid)); return
+    if data=="wc_setpieces":
+        t=get_my_team(uid)
+        if not t: await q.message.reply_text("❌ اول تیم ملی بگیر."); return
+        line=get_lineup(t["team_code"])
+        kb=[[InlineKeyboardButton(p["player_name"],callback_data=f"setpiece_captain_{p['player_id']}")] for p in line]
+        kb += [[InlineKeyboardButton("🎯 پنالتی‌زن",callback_data="setpiece_penalty")],[InlineKeyboardButton("🦶 ضربه آزاد",callback_data="setpiece_free")],[InlineKeyboardButton("🚩 کرنر",callback_data="setpiece_corner")]]
+        await q.message.reply_text("🎽 ابتدا نوع مسئولیت را انتخاب کن:",reply_markup=InlineKeyboardMarkup(kb)); return
+    if data.startswith("setpiece_"):
+        t=get_my_team(uid)
+        if not t: return
+        if data in ("setpiece_penalty","setpiece_free","setpiece_corner"):
+            field={"setpiece_penalty":"penalty_taker_id","setpiece_free":"free_kick_id","setpiece_corner":"corner_taker_id"}[data]
+            context.user_data["piece_field"]=field
+            kb=[[InlineKeyboardButton(p["player_name"],callback_data=f"piecepick_{p['player_id']}")] for p in get_lineup(t["team_code"])]
+            await q.message.reply_text("بازیکن را انتخاب کن:",reply_markup=InlineKeyboardMarkup(kb)); return
+        if data.startswith("setpiece_captain_"):
+            pid=int(data.rsplit("_",1)[1]); set_team_setting(t["team_code"],"captain_id",pid) if False else None
+            with db() as c: c.execute("UPDATE team_settings SET captain_id=? WHERE team_code=?",(pid,t["team_code"]))
+            await q.message.reply_text("✅ کاپیتان تعیین شد.",reply_markup=main_keyboard(uid)); return
+    if data.startswith("piecepick_"):
+        t=get_my_team(uid); field=context.user_data.pop("piece_field",None)
+        if t and field:
+            pid=int(data.split("_")[-1]);
+            if pid in [p["player_id"] for p in get_lineup(t["team_code"])]:
+                with db() as c: c.execute(f"UPDATE team_settings SET {field}=? WHERE team_code=?",(pid,t["team_code"]))
+        await q.message.reply_text("✅ مسئول ضربه ثبت شد.",reply_markup=main_keyboard(uid)); return
+    if data.startswith("setform_"):
+        t=get_my_team(uid)
+        if t and data[8:] in FORMATIONS: set_team_setting(t["team_code"],"formation",data[8:])
+        await q.message.reply_text("✅ آرایش تغییر کرد.",reply_markup=main_keyboard(uid)); return
+    if data.startswith("setment_"):
+        t=get_my_team(uid)
+        if t and data[8:] in MENTALITIES: set_team_setting(t["team_code"],"mentality",data[8:])
+        await q.message.reply_text("✅ ذهنیت تیم تغییر کرد.",reply_markup=main_keyboard(uid)); return
+    if data=="wc_stats":
+        t=get_my_team(uid)
+        if not t: await q.message.reply_text("❌ اول تیم ملی بگیر."); return
+        with db() as c:
+            rows=c.execute("SELECT p.player_name,p.position,COUNT(s.id) apps,COALESCE(SUM(s.goals),0) goals,COALESCE(SUM(s.assists),0) assists,COALESCE(AVG(s.rating),0) rating FROM world_cup_players p LEFT JOIN player_match_stats s ON s.player_id=p.player_id WHERE p.team_code=? GROUP BY p.player_id ORDER BY goals DESC,assists DESC,rating DESC",(t["team_code"],)).fetchall()
+        text="📈 آمار بازیکنان\n\n"+"\n".join(f"{r['player_name']} | بازی {r['apps']} | ⚽ {r['goals']} | 🅰️ {r['assists']} | ⭐ {r['rating']:.1f}" for r in rows)
+        await q.message.reply_text(text[:4000],reply_markup=main_keyboard(uid)); return
+
+    if data=="wc_table":
+        await q.message.reply_text(render_table()[:4000]); return
+    if data=="wc_results":
+        await q.message.reply_text(render_results()[:4000]); return
+    if data=="wc_status":
+        r=tournament_round()
+        caption=f"🏆 {WORLD_CUP_NAME}\n\n📍 مرحله فعلی: {stage_label(r)}\n🌍 تعداد تیم‌ها: ۴۸\n👥 گروه‌ها: ۱۲ گروه چهار تیمی\n\n🎮 اجرای مسابقات فقط از پنل ادمین انجام می‌شود."
+        await q.message.reply_text(caption,reply_markup=main_keyboard(uid))
+        return
+    if data=="wc_news":
+        await q.message.reply_text(recent_news()[:4000]); return
+    if data=="wc_statement":
+        context.user_data["awaiting"]="statement"
+        await q.message.reply_text("📢 بیانیه‌ات را بفرست تا به عنوان خبر تیم ملی منتشر شود."); return
+
+    if data=="admin_clear_teams":
+        if not is_admin(uid): return
+        context.user_data["awaiting"]="admin_clear_teams_confirm"
+        await q.message.reply_text("⚠️ با این کار تیم ملی تمام کاربران آزاد می‌شود و هیچ تیم یا بازیکنی حذف نمی‌شود.\n\nبرای تأیید عبارت CLEAR TEAMS را دقیقاً بفرست.")
         return
 
-    if not context.args:
-        await update.message.reply_text("استفاده درست:\n/set_news متن خبر اینجا")
+    if data=="admin_menu":
+        if not is_admin(uid): return
+        await q.message.reply_text("⚙️ پنل مدیریت جام جهانی",reply_markup=admin_keyboard()); return
+    if not is_admin(uid) and data.startswith("admin_"):
         return
+    if data=="admin_assign":
+        context.user_data["awaiting"]="admin_assign"
+        await q.message.reply_text("فرمت:\nآیدی کاربر + کد تیم\nمثال: 123456789 IRN"); return
+    if data=="admin_release":
+        context.user_data["awaiting"]="admin_release"
+        await q.message.reply_text("آیدی عددی کاربر را بفرست."); return
+    if data=="admin_budget":
+        context.user_data["awaiting"]="admin_budget"
+        await q.message.reply_text("فرمت: آیدی کاربر + مقدار بودجه\nمثال: 123456789 100"); return
+    if data=="admin_power":
+        context.user_data["awaiting"]="admin_power"
+        await q.message.reply_text("فرمت: کد تیم + قدرت جدید\nمثال: FRA 93"); return
+    if data=="admin_vip":
+        context.user_data["awaiting"]="admin_vip"
+        await q.message.reply_text("فرمت: کد تیم + on/off\nمثال: FRA on"); return
+    if data=="admin_news":
+        context.user_data["awaiting"]="admin_news"
+        await q.message.reply_text("متن خبر را بفرست تا در کانال منتشر شود."); return
+    if data=="admin_users":
+        with db() as c:
+            rows=c.execute("SELECT team_code,team_name,group_name,assigned_user_id,is_vip FROM national_teams ORDER BY group_name,team_name").fetchall()
+        text="👥 وضعیت تیم‌های ملی\n\n"+"\n".join([f"{r['team_code']} | {r['team_name']} | گروه {r['group_name']} | {('VIP | ' if r['is_vip'] else '')}{r['assigned_user_id'] or 'آزاد'}" for r in rows])
+        await q.message.reply_text(text[:4000]); return
+    if data=="admin_reset":
+        context.user_data["awaiting"]="admin_reset_confirm"
+        await q.message.reply_text("⚠️ برای ریست کامل تورنمنت، عبارت RESET را بفرست."); return
+    if data=="admin_next_round":
+        await run_next_round(q,context); return
 
-    text = " ".join(context.args)
-    set_news(text)
-    await update.message.reply_text("✅ خبر جدید ثبت شد.")
-    if CHANNEL_ID:
+
+async def deliver_match_reports(bot, match_ids):
+    for mid in match_ids:
+        report=full_match_report(mid)
+        highlight=channel_match_highlight(mid)
+        with db() as c:
+            m=c.execute("SELECT team_a,team_b FROM matches WHERE match_id=?",(mid,)).fetchone()
+            users=c.execute("SELECT assigned_user_id FROM national_teams WHERE team_code IN (?,?) AND assigned_user_id IS NOT NULL",(m["team_a"],m["team_b"])).fetchall()
+        for u in users:
+            try: await bot.send_message(chat_id=u["assigned_user_id"],text=report[:4000])
+            except Exception as e: logger.warning("private report failed: %s",e)
+        await publish(bot,highlight)
+
+
+async def run_next_round(q,context):
+    r=tournament_round(); match_ids=[]; title=""
+    if r<=3:
+        results=run_group_round(r)
+        if not results:
+            await q.message.reply_text("⚠️ این دور قبلاً اجرا شده یا مسابقه‌ای باقی نمانده."); return
+        # Find matches created in this stage since latest execution.
+        with db() as c: rows=c.execute("SELECT match_id FROM matches WHERE stage=? ORDER BY match_id",(f"گروهی - دور {r}",)).fetchall()
+        match_ids=[x["match_id"] for x in rows]; set_round(r+1); title=f"⚽️ نتایج {stage_label(r)}"
+    elif r==4:
         try:
-            await context.bot.send_message(chat_id=CHANNEL_ID, text=f"📰 خبر جدید:\n\n{text}")
+            pairs=official_r32_pairs()
         except Exception as e:
-            logger.warning(f"ارسال خبر به کانال ناموفق بود: {e}")
-            await update.message.reply_text("⚠️ خبر ثبت شد ولی ارسالش به کانال ناموفق بود؛ مطمئن شو ربات ادمین کانال باشه.")
-
-
-async def add_player_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
-        return
-
-    raw = " ".join(context.args)
-    parts = [p.strip() for p in raw.split("|")]
-    if len(parts) not in (4, 5):
-        await update.message.reply_text(
-            "استفاده درست:\n/add_player نام|تیم|پست(GK/DF/MF/FW)|قیمت|قدرت(اختیاری)\n\n"
-            "مثال:\n/add_player رونالدو|النصر|FW|14\n"
-            "یا با قدرت دلخواه:\n/add_player رونالدو|النصر|FW|14|16"
-        )
-        return
-
-    if len(parts) == 5:
-        name, team, position, price_str, power_str = parts
+            await q.message.reply_text(f"❌ ساخت براکت دور ۳۲ ناموفق بود.\n{e}"); return
+        winners=[]; match_ids=[]
+        for a,b in pairs:
+            ga,gb,w,stats,mid=play_and_save(a,b,"دور ۳۲",None,True)
+            winners.append(w); match_ids.append(mid)
+        context.application.bot_data["r32_winners"]=winners
+        set_round(5); title="🏆 نتایج دور ۳۲"
+    elif r==5:
+        teams=context.application.bot_data.get("r32_winners",[])
+        if len(teams)!=16: await q.message.reply_text("❌ اطلاعات دور ۳۲ پیدا نشد."); return
+        winners,match_ids=knockout_round(teams,"دور ۱۶"); context.application.bot_data["r16_winners"]=winners; set_round(6); title="🏆 نتایج دور ۱۶"
+    elif r==6:
+        teams=context.application.bot_data.get("r16_winners",[])
+        winners,match_ids=knockout_round(teams,"یک‌چهارم نهایی"); context.application.bot_data["qf_winners"]=winners; set_round(7); title="🏆 نتایج یک‌چهارم نهایی"
+    elif r==7:
+        teams=context.application.bot_data.get("qf_winners",[])
+        winners,match_ids=knockout_round(teams,"نیمه‌نهایی")
+        losers=[]
+        with db() as c:
+            for mid in match_ids:
+                m=c.execute("SELECT team_a,team_b,winner_code FROM matches WHERE match_id=?",(mid,)).fetchone(); losers.append(m["team_b"] if m["winner_code"]==m["team_a"] else m["team_a"])
+        context.application.bot_data["sf_winners"]=winners; context.application.bot_data["sf_losers"]=losers; set_round(8); title="🏆 نتایج نیمه‌نهایی"
+    elif r==8:
+        teams=context.application.bot_data.get("sf_losers",[]); winners,match_ids=knockout_round(teams,"رده‌بندی"); context.application.bot_data["third_winner"]=winners[0]; set_round(9); title="🥉 نتیجه رده‌بندی"
+    elif r==9:
+        teams=context.application.bot_data.get("sf_winners",[]); winners,match_ids=knockout_round(teams,"فینال"); champion=winners[0]
+        with db() as c: c.execute("UPDATE tournament SET champion_code=? WHERE id=1",(champion,))
+        set_round(10); title="🏆 فینال جام جهانی"
     else:
-        name, team, position, price_str = parts
-        power_str = None
-
-    if position not in ("GK", "DF", "MF", "FW"):
-        await update.message.reply_text("پست باید یکی از این‌ها باشه: GK, DF, MF, FW")
-        return
-    try:
-        price = float(price_str)
-        power = float(power_str) if power_str is not None else None
-    except ValueError:
-        await update.message.reply_text("قیمت و قدرت باید عدد باشن.")
-        return
-
-    player_id = add_player(name, team, position, price, power)
-    await update.message.reply_text(f"✅ بازیکن «{name}» با آیدی {player_id} اضافه شد.")
+        await q.message.reply_text("🏆 جام جهانی به پایان رسیده است."); return
+    await deliver_match_reports(context.bot,match_ids)
+    await q.message.reply_text(f"{title}\n\n✅ {len(match_ids)} مسابقه برگزار شد.\n📨 گزارش کامل برای مدیران تیم‌ها ارسال شد.\n📢 کانال فقط خلاصه نتایج را دریافت کرد.")
 
 
-async def set_points_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
-        return
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid=update.effective_user.id
+    ensure_user(uid,update.effective_user.username)
+    awaiting=context.user_data.get("awaiting")
+    if not awaiting: return
+    text=update.message.text.strip()
 
-    args = context.args
-    if len(args) != 2:
-        await update.message.reply_text("استفاده درست:\n/set_points <آیدی بازیکن> <امتیاز>")
-        return
+    if awaiting=="train_team":
+        context.user_data.pop("awaiting",None)
+        try: amount=float(text)
+        except ValueError:
+            await update.message.reply_text("❌ مقدار باید عدد باشد."); return
+        ok,msg=train_team(uid,amount)
+        await update.message.reply_text(("✅ " if ok else "❌ ")+msg,reply_markup=main_keyboard(uid)); return
 
-    try:
-        player_id = int(args[0])
-        points = float(args[1])
-    except ValueError:
-        await update.message.reply_text("آیدی بازیکن و امتیاز باید عدد باشن.")
-        return
+    if awaiting.startswith("train_player:"):
+        context.user_data.pop("awaiting",None)
+        try: amount=float(text); pid=int(awaiting.split(":")[1])
+        except ValueError:
+            await update.message.reply_text("❌ مقدار نامعتبر است."); return
+        ok,msg=train_player(uid,pid,amount)
+        await update.message.reply_text(("✅ " if ok else "❌ ")+msg); return
 
-    player = get_player(player_id)
-    if not player:
-        await update.message.reply_text("بازیکنی با این آیدی پیدا نشد.")
-        return
-
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE players SET week_points = ?, total_points = total_points + ? WHERE player_id = ?",
-            (points, points, player_id),
-        )
-        c = conn.cursor()
-        c.execute("SELECT DISTINCT user_id FROM user_players WHERE player_id = ?", (player_id,))
-        owners = c.fetchall()
-        for o in owners:
-            conn.execute(
-                "UPDATE users SET total_points = total_points + ? WHERE user_id = ?",
-                (points, o["user_id"]),
-            )
-
-    await update.message.reply_text(
-        f"✅ امتیاز {points} برای «{player['name']}» ثبت شد و به مجموع امتیاز صاحبانش اضافه شد."
-    )
-
-
-async def set_power_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
+    if awaiting=="statement":
+        context.user_data.pop("awaiting",None)
+        t=get_my_team(uid)
+        if not t:
+            await update.message.reply_text("❌ اول تیم ملی بگیر."); return
+        news=f"📢 بیانیه {team_emoji(t['team_code'])} {t['team_name']}\n\n{text}"
+        ok,err=await publish(context.bot,news)
+        await update.message.reply_text("✅ بیانیه در کانال منتشر شد." if ok else f"❌ ارسال بیانیه به کانال ناموفق بود.\n\n{err[:500]}")
         return
 
-    args = context.args
-    if len(args) != 2:
-        await update.message.reply_text("استفاده درست:\n/set_power <آیدی بازیکن> <قدرت>")
+    if not is_admin(uid): return
+    context.user_data.pop("awaiting",None)
+
+    if awaiting=="admin_assign":
+        parts=text.split()
+        if len(parts)!=2:
+            await update.message.reply_text("❌ فرمت: آیدی + کد تیم"); return
+        try: target=int(parts[0])
+        except ValueError:
+            await update.message.reply_text("❌ آیدی باید عدد باشد."); return
+        ok,msg=assign_team(target,parts[1])
+        await update.message.reply_text(("✅ " if ok else "❌ ")+msg)
+        if ok:
+            t=get_team(parts[1].upper())
+            u=get_user(target)
+            username=f"@{u['username']}" if u and u['username'] else f"کاربر {target}"
+            await publish(context.bot,f"🚨 خبر فوری | جام جهانی ۲۰۲۶\n\n🇺🇳 تیم ملی {t['team_name']} به {username} اختصاص یافت.\n👥 گروه: {t['group_name']}\n🔖 کد تیم: {t['team_code']}")
         return
 
-    try:
-        player_id = int(args[0])
-        power = float(args[1])
-    except ValueError:
-        await update.message.reply_text("آیدی بازیکن و قدرت باید عدد باشن.")
+    if awaiting=="admin_release":
+        try: target=int(text)
+        except ValueError:
+            await update.message.reply_text("❌ آیدی باید عدد باشد."); return
+        ok,msg=release_team(target); await update.message.reply_text(("✅ " if ok else "❌ ")+msg); return
+
+    if awaiting=="admin_budget":
+        parts=text.split()
+        try: target=int(parts[0]); amount=float(parts[1])
+        except (ValueError,IndexError):
+            await update.message.reply_text("❌ فرمت: آیدی + مقدار"); return
+        ok=add_budget(target,amount); await update.message.reply_text("✅ بودجه اضافه شد." if ok else "❌ کاربر پیدا نشد."); return
+
+    if awaiting=="admin_power":
+        parts=text.split()
+        try: power=float(parts[1]); code=parts[0].upper()
+        except (ValueError,IndexError):
+            await update.message.reply_text("❌ فرمت: کد تیم + قدرت"); return
+        with db() as c: cur=c.execute("UPDATE national_teams SET base_power=? WHERE team_code=?",(power,code))
+        await update.message.reply_text("✅ قدرت تنظیم شد." if cur.rowcount else "❌ تیم پیدا نشد."); return
+
+    if awaiting=="admin_vip":
+        parts=text.split()
+        if len(parts)!=2 or parts[1].lower() not in ("on","off"):
+            await update.message.reply_text("❌ فرمت: FRA on/off"); return
+        code=parts[0].upper(); vip=1 if parts[1].lower()=="on" else 0
+        with db() as c: cur=c.execute("UPDATE national_teams SET is_vip=? WHERE team_code=?",(vip,code))
+        await update.message.reply_text("💎 وضعیت VIP تغییر کرد." if cur.rowcount else "❌ تیم پیدا نشد."); return
+
+    if awaiting=="admin_news":
+        ok,err=await publish(context.bot,"📰 خبر جام جهانی\n\n"+text)
+        await update.message.reply_text("✅ خبر در کانال منتشر شد." if ok else f"❌ ارسال خبر ناموفق بود.\n\n{err[:500]}")
         return
 
-    player = get_player(player_id)
-    if not player:
-        await update.message.reply_text("بازیکنی با این آیدی پیدا نشد.")
+    if awaiting=="admin_clear_teams_confirm":
+        if text != "CLEAR TEAMS":
+            await update.message.reply_text("❌ برای تأیید باید دقیقاً CLEAR TEAMS را بفرستی."); return
+        clear_all_team_assignments()
+        await update.message.reply_text("🧹 همه تیم‌های ملی آزاد شدند.\n✅ کاربران تیم ندارند.\n✅ تیم‌ها و بازیکنان حفظ شدند.", reply_markup=admin_keyboard())
         return
 
-    with get_conn() as conn:
-        conn.execute("UPDATE players SET power = ? WHERE player_id = ?", (power, player_id))
-
-    await update.message.reply_text(f"✅ قدرت «{player['name']}» روی {power:.0f} تنظیم شد.")
-
-
-async def remove_player_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
-        return
-
-    args = context.args
-    if len(args) != 1:
-        await update.message.reply_text("استفاده درست:\n/remove_player <آیدی بازیکن>")
-        return
-
-    try:
-        player_id = int(args[0])
-    except ValueError:
-        await update.message.reply_text("آیدی بازیکن باید عدد باشه.")
-        return
-
-    player = get_player(player_id)
-    if not player:
-        await update.message.reply_text("بازیکنی با این آیدی پیدا نشد.")
-        return
-
-    delete_player(player_id)
-    await update.message.reply_text(f"🗑 بازیکن «{player['name']}» حذف شد (از تیم هرکسی هم بود، برداشته شد).")
+    if awaiting=="admin_reset_confirm":
+        if text!="RESET":
+            await update.message.reply_text("❌ برای تأیید باید دقیقاً RESET را بفرستی."); return
+        with db() as c:
+            c.execute("DELETE FROM match_events")
+            c.execute("DELETE FROM player_match_stats")
+            c.execute("DELETE FROM player_tournament_stats")
+            c.execute("DELETE FROM matches")
+            c.execute("UPDATE standings SET played=0,wins=0,draws=0,losses=0,goals_for=0,goals_against=0,points=0")
+            c.execute("UPDATE world_cup_players SET fatigue=0,form=0,injury_until=0,suspension=0")
+            c.execute("UPDATE tournament SET round=1,champion_code=NULL,third_code=NULL WHERE id=1")
+        context.application.bot_data.clear()
+        await update.message.reply_text("♻️ تورنمنت ریست شد."); return
 
 
-async def reset_league_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("این دستور فقط برای ادمین‌هاست.")
-        return
-
-    reset_league()
-    await update.message.reply_text("♻️ جدول لیگ ریست شد. امتیاز و رکورد همه کاربرا صفر شد.")
+async def gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ثبت کاربر حتی اگر مستقیماً پیام بفرستد.
+    if update.effective_user:
+        ensure_user(update.effective_user.id,update.effective_user.username)
 
 
-# ================== راه‌اندازی ==================
-
-async def bot_enabled_gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """اگه ادمین ربات رو خاموش کرده باشه، جز خود ادمین‌ها هیچکس نمی‌تونه ازش استفاده کنه"""
-    user = update.effective_user
-    if user and is_admin(user.id):
-        return
-    if is_bot_enabled():
-        return
-    if update.callback_query:
-        try:
-            await update.callback_query.answer("⛔️ ربات موقتاً خاموش است.", show_alert=True)
-        except Exception:
-            pass
-        raise ApplicationHandlerStop
-    if update.effective_message:
-        await update.effective_message.reply_text("⛔️ ربات موقتاً خاموش است. بعداً امتحان کن.")
-    raise ApplicationHandlerStop
-
+# اطمینان از تعریف logger حتی در اجرای مستقیم Pydroid
+logger = logging.getLogger("WorldCupBot2026")
 
 def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("توکن ربات (BOT_TOKEN) تنظیم نشده! خط BOT_TOKEN رو توی فایل پر کن.")
-
+    # لاگر را داخل main هم تعریف می‌کنیم تا Pydroid تحت هیچ شرایطی NameError ندهد
+    app_logger = logging.getLogger("WorldCupBot2026")
+    globals()["logger"] = app_logger
     init_db()
-    seed_players_if_empty()
-
-    app = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .base_url(BALE_API_BASE_URL)
-        .build()
-    )
-
-    # دستورات عمومی
-    app.add_handler(TypeHandler(Update, bot_enabled_gate), group=-1)
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("myid", myid_command))
-    app.add_handler(CommandHandler("players", players_list))
-    app.add_handler(CommandHandler("myteam", my_team))
-    app.add_handler(CommandHandler("budget", budget_command))
-    app.add_handler(CommandHandler("leaderboard", leaderboard_command))
-    app.add_handler(CommandHandler("league", leaderboard_command))
-    app.add_handler(CommandHandler("academy", academy_command))
-    app.add_handler(CommandHandler("news", news_command))
-    app.add_handler(CommandHandler("battle", battle_command))
-    app.add_handler(CommandHandler("mystats", mystats_command))
-    app.add_handler(CallbackQueryHandler(buy_callback, pattern=r"^buy_\d+$"))
-    app.add_handler(CallbackQueryHandler(sell_callback, pattern=r"^sell_\d+$"))
-    app.add_handler(CallbackQueryHandler(upgrade_callback, pattern=r"^upgrade_\d+$"))
-    app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu_"))
-    app.add_handler(CallbackQueryHandler(team_setup_callback, pattern=r"^(setcolor[12]_|setsponsor_)"))
-    app.add_handler(CallbackQueryHandler(edit_team_callback, pattern=r"^editteam_"))
-    app.add_handler(CallbackQueryHandler(manual_pairing_callback, pattern=r"^(manualpick_|manual_finish|manual_cancel)"))
-    app.add_handler(CallbackQueryHandler(friendly_match_callback, pattern=r"^(friendlypick_|friendly_cancel)"))
-    app.add_handler(CallbackQueryHandler(buypack_callback, pattern=r"^buypack_"))
-    app.add_handler(CallbackQueryHandler(
-        lineup_tactic_callback,
-        pattern=r"^(lineup_|setformation_|togglelineup_|tactic_pick|settactic_|stadium_upgrade)"
-    ))
-    app.add_handler(CallbackQueryHandler(admin_menu_callback, pattern=r"^admin_"))
-
-    # دستورات ادمین (متنی - برای کسی که ترجیح میده تایپ کنه)
-    app.add_handler(CommandHandler("admin_help", admin_help))
-    app.add_handler(CommandHandler("give_budget", give_budget_command))
-    app.add_handler(CommandHandler("set_news", set_news_command))
-    app.add_handler(CommandHandler("add_player", add_player_command))
-    app.add_handler(CommandHandler("set_points", set_points_command))
-    app.add_handler(CommandHandler("set_power", set_power_command))
-    app.add_handler(CommandHandler("remove_player", remove_player_command))
-    app.add_handler(CommandHandler("reset_league", reset_league_command))
-
-    # ورودی متنی بعد از زدن یکی از دکمه‌های پنل ادمین (باید آخر از همه ثبت بشه)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_input_handler))
-
-    logger.info("ربات در حال اجراست...")
+    ensure_match_system()
+    seed_data()
+    app=(ApplicationBuilder().token(BOT_TOKEN).base_url(BALE_API_BASE_URL).build())
+    app.add_handler(TypeHandler(Update,gate),group=-1)
+    app.add_handler(CommandHandler("start",start))
+    app.add_handler(CommandHandler("help",help_cmd))
+    app.add_handler(CommandHandler("myid",myid))
+    app.add_handler(CommandHandler("admin",admin_cmd))
+    app.add_handler(CommandHandler("channel_test",channel_test))
+    app.add_handler(CallbackQueryHandler(callback,pattern=r"^(wc_|admin_|menu_|setform_|setment_|setpress_|setpass_|lu_|setpiece_|piecepick_)"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_handler))
+    app_logger.info("World Cup 2026 clean bot started")
     app.run_polling()
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
