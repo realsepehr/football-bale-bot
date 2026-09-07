@@ -25,7 +25,7 @@ from telegram.ext import (
 
 # ========================= تنظیمات =========================
 BALE_API_BASE_URL = "https://tapi.bale.ai/bot"
-ADMIN_IDS = [1845840976]
+ADMIN_IDS = [1845840976, 136295297]
 CHANNEL_ID = "@FootballXchannel"
 DATABASE_PATH = "worldcup_2026.db"
 
@@ -75,7 +75,7 @@ POSITION_FA = {"GK": "دروازه‌بان", "DF": "مدافع", "MF": "هاف�
 
 
 # تنظیمات حساس/محلی
-BOT_TOKEN = "323724086:4HV_kcxlSeEqInyyu9nTnfapRh-L3kuIq5Q"
+BOT_TOKEN = "323724086:EyfZ2zBFBKzrC-_hvcmYk2d2y0-0zdKZRgU"
 CHANNEL_ID = "@FootballXchannel"
 # ========================= دیتابیس =========================
 @contextmanager
@@ -731,7 +731,7 @@ def recover_players():
 def play_and_save(code_a, code_b, stage, group=None, knockout=False):
     result=simulate_match(code_a,code_b,knockout); s=result["stats"]
     with db() as c:
-        cur=c.execute("INSERT INTO matches(stage,group_name,team_a,team_b,score_a,score_b,winner_code,note,stadium,referee,weather,attendance,mvp_player_id,possession_a,shots_a,shots_b,sot_a,sot_b,corners_a,corners_b,penalties_a,penalties_b) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(stage,group,code_a,code_b,result["ga"],result["gb"],result["winner"],"",s["stadium"],s["referee"],s["weather"],s["attendance"],s["mvp"]["player_id"] if s["mvp"] else None,s["possession_a"],s["shots_a"],s["shots_b"],s["sot_a"],s["sot_b"],s["corners_a"],s["corners_b"],s["penalty_a"],s["penalty_b"]))
+        cur=c.execute("INSERT INTO matches(stage,group_name,team_a,team_b,score_a,score_b,winner_code,note,stadium,referee,weather,attendance,mvp_player_id,possession_a,shots_a,shots_b,sot_a,sot_b,corners_a,corners_b,penalties_a,penalties_b) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(stage,group,code_a,code_b,result["ga"],result["gb"],result["winner"],"",s["stadium"],s["referee"],s["weather"],s["attendance"],s["mvp"]["player_id"] if s["mvp"] else None,s["possession_a"],s["shots_a"],s["shots_b"],s["sot_a"],s["sot_b"],s["corners_a"],s["corners_b"],s["penalty_a"],s["penalty_b"]))
         match_id=cur.lastrowid
     for e in s["events"]:
         add_match_event(match_id,e["minute"],e["type"],e.get("team"),e.get("player",{}).get("player_id") if e.get("player") else None,e.get("related",{}).get("player_id") if e.get("related") else None,e.get("detail", ""))
