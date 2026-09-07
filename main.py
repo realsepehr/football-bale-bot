@@ -25,7 +25,7 @@ from telegram.ext import (
 
 # ========================= تنظیمات =========================
 BALE_API_BASE_URL = "https://tapi.bale.ai/bot"
-ADMIN_IDS = [1845840976, 136295297]
+ADMIN_IDS = [1845840976,12627252]
 CHANNEL_ID = "@FootballXchannel"
 DATABASE_PATH = "worldcup_2026.db"
 
