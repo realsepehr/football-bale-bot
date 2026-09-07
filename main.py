@@ -25,8 +25,8 @@ from telegram.ext import (
 
 # ========================= تنظیمات =========================
 BALE_API_BASE_URL = "https://tapi.bale.ai/bot"
-ADMIN_IDS = [1845840976,12627252]
-CHANNEL_ID = "@ddddddddddn"
+ADMIN_IDS = [1845840976]
+CHANNEL_ID = "@FootballXchannel"
 DATABASE_PATH = "worldcup_2026.db"
 
 WORLD_CUP_NAME = "جام جهانی ۲۰۲۶"
@@ -75,8 +75,8 @@ POSITION_FA = {"GK": "دروازه‌بان", "DF": "مدافع", "MF": "هاف�
 
 
 # تنظیمات حساس/محلی
-BOT_TOKEN = "323724086:4HV_kcxlSeEqInyyu9nTnfapRh-L3kuIq5Q"
-CHANNEL_ID = "@ddddddddddn"
+BOT_TOKEN = "460332597:5RtOn61a63aJyCQB5Ds-qeuo-oYEBGMQIRM"
+CHANNEL_ID = "@FootballXchannel"
 # ========================= دیتابیس =========================
 @contextmanager
 def db():
@@ -1346,51 +1346,111 @@ async def deliver_match_reports(bot, match_ids):
         await publish(bot,highlight)
 
 
+def _db_winners_for_stage(stage):
+    """برندگان یک مرحله را از دیتابیس بازسازی می‌کند؛ برای بعد از Restart لازم است."""
+    with db() as c:
+        rows=c.execute("SELECT winner_code FROM matches WHERE stage=? ORDER BY match_id",(stage,)).fetchall()
+    return [r["winner_code"] for r in rows if r["winner_code"]]
+
+
+def _db_losers_for_stage(stage):
+    with db() as c:
+        rows=c.execute("SELECT team_a,team_b,winner_code FROM matches WHERE stage=? ORDER BY match_id",(stage,)).fetchall()
+    out=[]
+    for r in rows:
+        if r["winner_code"]==r["team_a"]: out.append(r["team_b"])
+        elif r["winner_code"]==r["team_b"]: out.append(r["team_a"])
+    return out
+
+
 async def run_next_round(q,context):
-    r=tournament_round(); match_ids=[]; title=""
-    if r<=3:
-        results=run_group_round(r)
-        if not results:
-            await q.message.reply_text("⚠️ این دور قبلاً اجرا شده یا مسابقه‌ای باقی نمانده."); return
-        # Find matches created in this stage since latest execution.
-        with db() as c: rows=c.execute("SELECT match_id FROM matches WHERE stage=? ORDER BY match_id",(f"گروهی - دور {r}",)).fetchall()
-        match_ids=[x["match_id"] for x in rows]; set_round(r+1); title=f"⚽️ نتایج {stage_label(r)}"
-    elif r==4:
-        try:
+    # مهم: این تابع فقط مسابقات را اجرا می‌کند و دیتابیس تیم‌ها/کاربران را ریست نمی‌کند.
+    try:
+        r=tournament_round(); match_ids=[]; title=""
+        if r<=3:
+            results=run_group_round(r)
+            if not results:
+                await q.message.reply_text("⚠️ این دور قبلاً اجرا شده یا مسابقه‌ای باقی نمانده.")
+                return
+            with db() as c:
+                rows=c.execute("SELECT match_id FROM matches WHERE stage=? ORDER BY match_id",(f"گروهی - دور {r}",)).fetchall()
+            match_ids=[x["match_id"] for x in rows]
+            set_round(r+1)
+            title=f"⚽️ نتایج {stage_label(r)}"
+        elif r==4:
             pairs=official_r32_pairs()
-        except Exception as e:
-            await q.message.reply_text(f"❌ ساخت براکت دور ۳۲ ناموفق بود.\n{e}"); return
-        winners=[]; match_ids=[]
-        for a,b in pairs:
-            ga,gb,w,stats,mid=play_and_save(a,b,"دور ۳۲",None,True)
-            winners.append(w); match_ids.append(mid)
-        context.application.bot_data["r32_winners"]=winners
-        set_round(5); title="🏆 نتایج دور ۳۲"
-    elif r==5:
-        teams=context.application.bot_data.get("r32_winners",[])
-        if len(teams)!=16: await q.message.reply_text("❌ اطلاعات دور ۳۲ پیدا نشد."); return
-        winners,match_ids=knockout_round(teams,"دور ۱۶"); context.application.bot_data["r16_winners"]=winners; set_round(6); title="🏆 نتایج دور ۱۶"
-    elif r==6:
-        teams=context.application.bot_data.get("r16_winners",[])
-        winners,match_ids=knockout_round(teams,"یک‌چهارم نهایی"); context.application.bot_data["qf_winners"]=winners; set_round(7); title="🏆 نتایج یک‌چهارم نهایی"
-    elif r==7:
-        teams=context.application.bot_data.get("qf_winners",[])
-        winners,match_ids=knockout_round(teams,"نیمه‌نهایی")
-        losers=[]
-        with db() as c:
-            for mid in match_ids:
-                m=c.execute("SELECT team_a,team_b,winner_code FROM matches WHERE match_id=?",(mid,)).fetchone(); losers.append(m["team_b"] if m["winner_code"]==m["team_a"] else m["team_a"])
-        context.application.bot_data["sf_winners"]=winners; context.application.bot_data["sf_losers"]=losers; set_round(8); title="🏆 نتایج نیمه‌نهایی"
-    elif r==8:
-        teams=context.application.bot_data.get("sf_losers",[]); winners,match_ids=knockout_round(teams,"رده‌بندی"); context.application.bot_data["third_winner"]=winners[0]; set_round(9); title="🥉 نتیجه رده‌بندی"
-    elif r==9:
-        teams=context.application.bot_data.get("sf_winners",[]); winners,match_ids=knockout_round(teams,"فینال"); champion=winners[0]
-        with db() as c: c.execute("UPDATE tournament SET champion_code=? WHERE id=1",(champion,))
-        set_round(10); title="🏆 فینال جام جهانی"
-    else:
-        await q.message.reply_text("🏆 جام جهانی به پایان رسیده است."); return
-    await deliver_match_reports(context.bot,match_ids)
-    await q.message.reply_text(f"{title}\n\n✅ {len(match_ids)} مسابقه برگزار شد.\n📨 گزارش کامل برای مدیران تیم‌ها ارسال شد.\n📢 کانال فقط خلاصه نتایج را دریافت کرد.")
+            if len(pairs)!=16:
+                await q.message.reply_text(f"❌ براکت دور ۳۲ کامل نیست. تعداد بازی‌ها: {len(pairs)}")
+                return
+            winners=[]
+            for a,b in pairs:
+                ga,gb,w,stats,mid=play_and_save(a,b,"دور ۳۲",None,True)
+                winners.append(w); match_ids.append(mid)
+            context.application.bot_data["r32_winners"]=winners
+            set_round(5); title="🏆 نتایج دور ۳۲"
+        elif r==5:
+            teams=context.application.bot_data.get("r32_winners",[])
+            if len(teams)!=16:
+                teams=_db_winners_for_stage("دور ۳۲")
+            if len(teams)!=16:
+                await q.message.reply_text("❌ برندگان دور ۳۲ در دیتابیس پیدا نشدند.")
+                return
+            winners,match_ids=knockout_round(teams,"دور ۱۶")
+            context.application.bot_data["r16_winners"]=winners
+            set_round(6); title="🏆 نتایج دور ۱۶"
+        elif r==6:
+            teams=context.application.bot_data.get("r16_winners",[])
+            if len(teams)!=8:
+                teams=_db_winners_for_stage("دور ۱۶")
+            if len(teams)!=8:
+                await q.message.reply_text("❌ برندگان دور ۱۶ در دیتابیس پیدا نشدند.")
+                return
+            winners,match_ids=knockout_round(teams,"یک‌چهارم نهایی")
+            context.application.bot_data["qf_winners"]=winners
+            set_round(7); title="🏆 نتایج یک‌چهارم نهایی"
+        elif r==7:
+            teams=context.application.bot_data.get("qf_winners",[])
+            if len(teams)!=4:
+                teams=_db_winners_for_stage("یک‌چهارم نهایی")
+            if len(teams)!=4:
+                await q.message.reply_text("❌ برندگان یک‌چهارم نهایی در دیتابیس پیدا نشدند.")
+                return
+            winners,match_ids=knockout_round(teams,"نیمه‌نهایی")
+            losers=_db_losers_for_stage("نیمه‌نهایی")
+            context.application.bot_data["sf_winners"]=winners
+            context.application.bot_data["sf_losers"]=losers
+            set_round(8); title="🏆 نتایج نیمه‌نهایی"
+        elif r==8:
+            teams=context.application.bot_data.get("sf_losers",[])
+            if len(teams)!=2:
+                teams=_db_losers_for_stage("نیمه‌نهایی")
+            if len(teams)!=2:
+                await q.message.reply_text("❌ تیم‌های رده‌بندی در دیتابیس پیدا نشدند.")
+                return
+            winners,match_ids=knockout_round(teams,"رده‌بندی")
+            context.application.bot_data["third_winner"]=winners[0]
+            set_round(9); title="🥉 نتیجه رده‌بندی"
+        elif r==9:
+            teams=context.application.bot_data.get("sf_winners",[])
+            if len(teams)!=2:
+                teams=_db_winners_for_stage("نیمه‌نهایی")
+            if len(teams)!=2:
+                await q.message.reply_text("❌ فینالیست‌ها در دیتابیس پیدا نشدند.")
+                return
+            winners,match_ids=knockout_round(teams,"فینال")
+            champion=winners[0]
+            with db() as c:
+                c.execute("UPDATE tournament SET champion_code=? WHERE id=1",(champion,))
+            set_round(10); title="🏆 فینال جام جهانی"
+        else:
+            await q.message.reply_text("🏆 جام جهانی به پایان رسیده است.")
+            return
+
+        await deliver_match_reports(context.bot,match_ids)
+        await q.message.reply_text(f"{title}\n\n✅ {len(match_ids)} مسابقه برگزار شد.\n📨 گزارش کامل برای مدیران تیم‌ها ارسال شد.\n📢 کانال فقط خلاصه نتایج را دریافت کرد.")
+    except Exception as e:
+        logger.exception("run_next_round failed")
+        await q.message.reply_text(f"❌ اجرای دور بعد با خطا متوقف شد.\n\n{type(e).__name__}: {e}")
 
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
