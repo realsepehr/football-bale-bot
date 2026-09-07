@@ -75,7 +75,7 @@ POSITION_FA = {"GK": "دروازه‌بان", "DF": "مدافع", "MF": "هاف�
 
 
 # تنظیمات حساس/محلی
-BOT_TOKEN = "460332597:5RtOn61a63aJyCQB5Ds-qeuo-oYEBGMQIRM"
+BOT_TOKEN = "323724086:4HV_kcxlSeEqInyyu9nTnfapRh-L3kuIq5Q
 CHANNEL_ID = "@FootballXchannel"
 # ========================= دیتابیس =========================
 @contextmanager
