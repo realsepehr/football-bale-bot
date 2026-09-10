@@ -27,7 +27,7 @@ from telegram.ext import (
 
 # ========================= تنظیمات =========================
 BALE_API_BASE_URL = "https://tapi.bale.ai/bot"
-ADMIN_IDS = [1845840976, 136295297]
+ADMIN_IDS = [1845840976,12627252]
 CHANNEL_ID = "@FootballXchannel"
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -78,7 +78,7 @@ POSITION_FA = {"GK": "دروازه‌بان", "DF": "مدافع", "MF": "هاف�
 
 
 # تنظیمات حساس/محلی
-BOT_TOKEN = "460332597:5RtOn61a63aJyCQB5Ds-qeuo-oYEBGMQIRM"
+BOT_TOKEN = "323724086:EyfZ2zBFBKzrC-_hvcmYk2d2y0-0zdKZRgU"
 CHANNEL_ID = "@FootballXchannel"
 # ========================= دیتابیس =========================
 @contextmanager
