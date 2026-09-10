@@ -13,6 +13,8 @@ logger = logging.getLogger("WorldCupBot2026")
 
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
+# مسیر دیتابیس (قبلاً در فایل جدای database_config.py بود، حالا همین‌جا تعریف شده)
+DATABASE_PATH = str(BASE_DIR / "world_cup_bot.db")
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler,
@@ -25,10 +27,11 @@ from telegram.ext import (
 
 # ========================= تنظیمات =========================
 BALE_API_BASE_URL = "https://tapi.bale.ai/bot"
-ADMIN_IDS = [1845840976,12627252]
+ADMIN_IDS = [1845840976, 136295297]
 CHANNEL_ID = "@FootballXchannel"
-DATABASE_PATH = "worldcup_2026.db"
+BASE_DIR = Path(__file__).resolve().parent
 
+# Database location is provided by database_config.py and is intentionally independent of this bot file.
 WORLD_CUP_NAME = "جام جهانی ۲۰۲۶"
 WIN_POINTS = 3
 DRAW_POINTS = 1
@@ -75,7 +78,7 @@ POSITION_FA = {"GK": "دروازه‌بان", "DF": "مدافع", "MF": "هاف�
 
 
 # تنظیمات حساس/محلی
-BOT_TOKEN = "323724086:EyfZ2zBFBKzrC-_hvcmYk2d2y0-0zdKZRgU"
+BOT_TOKEN = "460332597:5RtOn61a63aJyCQB5Ds-qeuo-oYEBGMQIRM"
 CHANNEL_ID = "@FootballXchannel"
 # ========================= دیتابیس =========================
 @contextmanager
@@ -252,6 +255,36 @@ def load_full_squads():
     except Exception as e:
         logger.warning("Full squad download failed: %s", e)
     return {}
+
+# تخصیص ثابت تیم‌های ملی به آیدی عددی کاربران در بله.
+# این لیست داخل خود کد است تا با عوض شدن فایل/سرور و ریست دیتابیس، دوباره خودکار اعمال شود.
+TEAM_USER_ASSIGNMENTS = {
+    "RSA": 941386927,
+    "MAR": 1953590697,
+    "GER": 1999679652,
+    "CIV": 1992949776,
+    "SWE": 1950161902,
+    "NED": 253387728,
+    "IRN": 1626883904,
+    "BEL": 1736190191,
+    "URU": 270609057,
+    "CPV": 2109423906,
+    "SEN": 1882787583,
+    "NOR": 1171189099,
+    "ARG": 759053096,
+    "POR": 772792839,
+    "CRO": 902607450,
+}
+
+
+def apply_team_user_assignments():
+    """تیم‌های بالا را در دیتابیس فعلی به کاربرانشان وصل می‌کند (اگر قبلاً وصل نشده باشند)."""
+    with db() as c:
+        for code, uid in TEAM_USER_ASSIGNMENTS.items():
+            c.execute("INSERT OR IGNORE INTO users(user_id,username,training_budget) VALUES(?,?,?)", (uid, "", START_TRAINING_BUDGET))
+            c.execute("UPDATE users SET national_team_code=? WHERE user_id=? AND (national_team_code IS NULL OR national_team_code=?)", (code, uid, code))
+            c.execute("UPDATE national_teams SET assigned_user_id=? WHERE team_code=? AND assigned_user_id IS NULL", (uid, code))
+
 
 def seed_data():
     full = load_full_squads()
@@ -731,10 +764,15 @@ def recover_players():
 def play_and_save(code_a, code_b, stage, group=None, knockout=False):
     result=simulate_match(code_a,code_b,knockout); s=result["stats"]
     with db() as c:
-        cur=c.execute("INSERT INTO matches(stage,group_name,team_a,team_b,score_a,score_b,winner_code,note,stadium,referee,weather,attendance,mvp_player_id,possession_a,shots_a,shots_b,sot_a,sot_b,corners_a,corners_b,penalties_a,penalties_b) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(stage,group,code_a,code_b,result["ga"],result["gb"],result["winner"],"",s["stadium"],s["referee"],s["weather"],s["attendance"],s["mvp"]["player_id"] if s["mvp"] else None,s["possession_a"],s["shots_a"],s["shots_b"],s["sot_a"],s["sot_b"],s["corners_a"],s["corners_b"],s["penalty_a"],s["penalty_b"]))
+        match_values=(stage,group,code_a,code_b,result["ga"],result["gb"],result["winner"],"",s["stadium"],s["referee"],s["weather"],s["attendance"],s["mvp"]["player_id"] if s["mvp"] else None,s["possession_a"],s["shots_a"],s["shots_b"],s["sot_a"],s["sot_b"],s["corners_a"],s["corners_b"],s["penalty_a"],s["penalty_b"])
+        match_columns=("stage","group_name","team_a","team_b","score_a","score_b","winner_code","note","stadium","referee","weather","attendance","mvp_player_id","possession_a","shots_a","shots_b","sot_a","sot_b","corners_a","corners_b","penalties_a","penalties_b")
+        if len(match_values) != len(match_columns):
+            raise RuntimeError(f"matches insert mismatch: {len(match_values)} values for {len(match_columns)} columns")
+        placeholders=",".join("?" for _ in match_columns)
+        cur=c.execute(f"INSERT INTO matches({','.join(match_columns)}) VALUES({placeholders})",match_values)
         match_id=cur.lastrowid
     for e in s["events"]:
-        add_match_event(match_id,e["minute"],e["type"],e.get("team"),e.get("player",{}).get("player_id") if e.get("player") else None,e.get("related",{}).get("player_id") if e.get("related") else None,e.get("detail", ""))
+        add_match_event(match_id,e["minute"],e["type"],e.get("team"),e["player"]["player_id"] if e.get("player") else None,e["related"]["player_id"] if e.get("related") else None,e.get("detail", ""))
     save_player_match_stats(match_id,code_a,code_b,result["ga"],result["gb"],s["mvp"],s["events"])
     if stage.startswith("گروهی"): record_group_match(code_a,code_b,result["ga"],result["gb"])
     return result["ga"],result["gb"],result["winner"],s,match_id
@@ -1102,6 +1140,20 @@ async def publish(bot, text):
 
 
 
+async def publish_photo(bot, photo, caption):
+    """ارسال بیانیه عکس‌دار به کانال."""
+    save_news(caption)
+    if not CHANNEL_ID:
+        return False, "CHANNEL_ID تنظیم نشده است."
+    try:
+        chat = await bot.get_chat(CHANNEL_ID)
+        await bot.send_photo(chat_id=chat.id, photo=photo, caption=caption[:1024])
+        return True, "✅ بیانیه عکس‌دار با موفقیت در کانال ارسال شد."
+    except Exception as e:
+        logger.exception("channel photo publish failed")
+        return False, f"❌ ارسال عکس به کانال ناموفق بود.\n{e}"
+
+
 # ========================= تصویر شروع جام جهانی =========================
 import base64 as _welcome_b64
 import tempfile as _welcome_tempfile
@@ -1290,7 +1342,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.message.reply_text(recent_news()[:4000]); return
     if data=="wc_statement":
         context.user_data["awaiting"]="statement"
-        await q.message.reply_text("📢 بیانیه‌ات را بفرست تا به عنوان خبر تیم ملی منتشر شود."); return
+        await q.message.reply_text("📢 بیانیه را بفرست.\n\n📝 متن ساده: فقط متن بفرست.\n🖼️ بیانیه عکس‌دار: عکس را همراه کپشن بفرست."); return
 
     if data=="admin_clear_teams":
         if not is_admin(uid): return
@@ -1453,6 +1505,29 @@ async def run_next_round(q,context):
         await q.message.reply_text(f"❌ اجرای دور بعد با خطا متوقف شد.\n\n{type(e).__name__}: {e}")
 
 
+async def statement_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        uid = update.effective_user.id
+        if context.user_data.get("awaiting") != "statement":
+            return
+        t = get_my_team(uid)
+        if not t:
+            context.user_data.pop("awaiting", None)
+            await update.message.reply_text("❌ اول تیم ملی بگیر.")
+            return
+        context.user_data.pop("awaiting", None)
+        raw_caption = (update.message.caption or "").strip()
+        caption = f"📢 بیانیه {team_emoji(t['team_code'])} {t['team_name']}"
+        if raw_caption:
+            caption += "\n\n" + raw_caption
+        photo = update.message.photo[-1].file_id
+        ok, err = await publish_photo(context.bot, photo, caption)
+        await update.message.reply_text("✅ بیانیه عکس‌دار در کانال منتشر شد." if ok else f"❌ ارسال بیانیه عکس‌دار ناموفق بود.\n\n{err[:500]}")
+    except Exception as e:
+        logger.exception("statement photo handler failed")
+        await update.message.reply_text(f"❌ خطا در بیانیه عکس‌دار.\n\n{type(e).__name__}: {e}")
+
+
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid=update.effective_user.id
     ensure_user(uid,update.effective_user.username)
@@ -1577,6 +1652,7 @@ def main():
     init_db()
     ensure_match_system()
     seed_data()
+    apply_team_user_assignments()
     app=(ApplicationBuilder().token(BOT_TOKEN).base_url(BALE_API_BASE_URL).build())
     app.add_handler(TypeHandler(Update,gate),group=-1)
     app.add_handler(CommandHandler("start",start))
@@ -1585,6 +1661,7 @@ def main():
     app.add_handler(CommandHandler("admin",admin_cmd))
     app.add_handler(CommandHandler("channel_test",channel_test))
     app.add_handler(CallbackQueryHandler(callback,pattern=r"^(wc_|admin_|menu_|setform_|setment_|setpress_|setpass_|lu_|setpiece_|piecepick_)"))
+    app.add_handler(MessageHandler(filters.PHOTO,statement_photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_handler))
     app_logger.info("World Cup 2026 clean bot started")
     app.run_polling()
